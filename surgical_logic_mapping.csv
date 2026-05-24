@@ -1,0 +1,23 @@
+Category,Procedure/Context,Trigger Keywords,Triggered Actions (Static),Triggered Tools (Static),Dynamic Heuristics / Rules
+Lens Surgery,Phaco,"Phaco, Phacoemulsification",axl (วัด AXL) ,slit-knife; Centurion/Legeon,"1. Selects 'Centurion' if surgeon is เกษรา, นภาพร, or ลินดา; else 'Legeon'."
+Lens Surgery,IOL,IOL,iol (วัด IOL),-,None
+Lens Surgery,ECCE,ECCE,axl (วัด AXL) ,slit-knife; 15-degree-blade,None
+Lens Surgery,SF-IOL,"SF-IOL, Sf + iol, SF IOL, SFIOL",iol (วัด IOL),slit-knife;15-degree-blade,None
+Lens Surgery,CTR,"CTR, Capsular tension ring",-,ctr-no,None
+Lens Surgery,CTS,"CTS, Capsular tension segment",-,cts,None
+Lens Surgery,Iris retractor,"Iris retractor, Iris retractors",-,iris-retractor,None
+Retinal Surgery,PPV,"PPV, Vitrectomy",-,ppv-set,Auto-checks 'soft-tip' whenever 'ppv-set' is enabled.
+Retinal Surgery,MP,"MP, Membrane peeling, ILM",-,,If Diagnosis contains 'ERM' or 'MH': checks 'bbg' and 'ilm-forceps' (sets to New). If Diagnosis contains 'TRD': checks 'micro-scissor'.
+Retinal Surgery,SO,"SO, SOI, Silicone oil injection",-,silicone-oil,None
+Retinal Surgery,HD SO,"HD SO, Heavy SO, Heavy Silicone Oil",-,silicone-oil-hd,None
+Retinal Surgery,EL,"EL, Endolaser",-,endolaser,None
+Glaucoma,GDI,"GDI, GD, Drainage implant, XEN, Ahmed, Preserflo, GFD Express, AADI",iop (วัด IOP); sclera-amnion-eye-bank (จอง Sclera/Amnion),glaucoma-device; 15-degree-blade,Auto-selects device type: 'Ahmed' -> Ahmed Valve; 'Xen' -> Xen Implant; 'Express' -> GFD; 'Preserflo' -> Microshunt; 'Aadi' -> AADI.
+Glaucoma,Tx + MMC,"Tx+MMC, Tx + MMC",iop (วัด IOP); key-mmc (Key MMC),15-degree-blade,None
+Cornea,PKP,"PKP, Keratoplasty",sclera-amnion-eye-bank (จอง Sclera/Amnion); anterior-photo (Anterior photo),15-degree-blade; punch-trephine (Punch & Trephine),None
+Cornea,Sclera/Amnion,"Sclera graft, Scleral graft, Amnion graft, AMT",sclera-amnion-eye-bank (จอง Sclera/Amnion),-,None
+Oculoplastics,EDCR,"EDCR, DCR",irrigation-probing (Irrigation & Probing),slit-knife; crescent-knife,None
+Oculoplastics,Oculoplastic,"Oculoplastic, Frontalis, Sling, Ptosis, Lid, Entropion, Ectropion, Blepharoplasty",photo-oculoplastic (ถ่ายรูป oculoplastic),-,None
+Strabismus,Strabismus,"Strabismus, Squint, Muscle, Recession, Resection",measure-strabismus (ส่งวัดมุมเข),-,None
+Cross-Category,Local Anesthesia,-,-,-,If Anesthesia is 'LA': Auto-checks 'axl' (วัด AXL) UNLESS it's a Glaucoma or Oculoplastic/Strabismus procedure.
+Cross-Category,General Surgery Type,-,-,-,If Category is 'Lens Surgery' or 'Retinal Surgery': Auto-checks 'axl' (วัด AXL).
+Cross-Category,Pricing Logic,-,-,-,"1. Costs vary by Coverage (CSMBS, SSS, UCS). 2. 'ppv-set' price defaults to 23G unless '25G' is in diagnosis. 3. Reused tools cost 0."

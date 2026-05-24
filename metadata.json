@@ -1,0 +1,6 @@
+{
+  "name": "Remix: OpPrep Assistant",
+  "description": "Surgical operation checklist generator with AI schedule scanning capabilities.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
