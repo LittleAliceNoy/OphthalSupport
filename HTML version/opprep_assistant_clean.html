@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpPrep Assistant</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        headline: ['Hanken Grotesk', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        brand: {
+                            primary: '#D13FFF',
+                            secondary: '#FF9666',
+                            tertiary: '#FF4094',
+                            neutral: '#000F14',
+                            'primary-dark': '#FC87F0',
+                            'secondary-dark': '#FFC1A7',
+                            'tertiary-dark': '#A2E6FF',
+                            'neutral-dark': '#0F172A',
+                        }
+                    },
+                    animation: {
+                        fadeIn: 'fadeIn 0.3s ease-in-out',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body { transition: background-color 0.3s ease, color 0.3s ease; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.1); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.3); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.5); }
+    </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-fuchsia-50 via-rose-50 to-cyan-50 dark:bg-brand-neutral-dark dark:bg-none text-gray-800 dark:text-gray-100 font-sans transition-colors duration-300">
+
+    <header class="bg-white dark:bg-[#151f32] border-b border-gray-100 dark:border-slate-800 sticky top-0 z-40 transition-colors duration-300">
+        <div class="max-w-7xl mx-auto px-4 py-2 sm:py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <i data-lucide="eye" class="text-[#8e5a7d] dark:text-pink-200"></i>
+                <h1 class="font-headline font-bold text-xl sm:text-2xl text-[#101421] dark:text-white leading-tight">OphthalmoSupport</h1>
+            </div>
+            <div class="flex items-center gap-2">
+                <button onclick="toggleTheme()" id="theme-toggle-btn" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-0 bg-gray-200 dark:bg-slate-700">
+                    <span id="theme-toggle-slider" class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform translate-x-1 flex items-center justify-center shadow-sm">
+                        <i data-lucide="sun" id="theme-icon" class="text-gray-400 w-2.5 h-2.5"></i>
+                    </span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-3xl mx-auto px-3 py-3 sm:px-4 sm:py-6">
+        <div class="space-y-4 sm:space-y-6">
+            
+            <section class="bg-white dark:bg-[#151f32] rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 p-3 sm:p-4 transition-colors duration-300">
+                <div class="flex justify-between items-center mb-2 sm:mb-3 border-b border-gray-50 dark:border-slate-800 pb-1.5 sm:pb-2">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="user" class="text-[#8e5a7d] dark:text-brand-secondary-dark w-4 h-4 sm:w-[16px] sm:h-[16px]"></i>
+                        <h2 class="text-[11px] sm:text-xs font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide">Case Basics</h2>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span id="surgeon-group-badge" class="hidden items-center justify-center min-w-[20px] h-5 px-1.5 rounded-md text-[10px] font-black border uppercase"></span>
+                        <button onclick="resetCaseBasics()" class="flex items-center gap-1 text-[9px] sm:text-[10px] uppercase font-bold text-gray-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 bg-gray-100 dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-900/30 px-2 py-1 flex-shrink-0 rounded transition-colors" title="Reset Case Basics">
+                            <i data-lucide="refresh-cw" class="w-2.5 h-2.5 sm:w-[12px] sm:h-[12px]"></i> Reset
+                        </button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Surgeon</label>
+                        <div class="relative">
+                            <select id="select-surgeon" onchange="updateSession('surgeonName', this.value)" class="w-full appearance-none bg-white dark:bg-[#151f32] border border-gray-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs font-semibold text-gray-800 dark:text-slate-200 outline-none focus:ring-0 focus:border-gray-200 dark:focus:border-slate-700 transition-all">
+                                <option value="">- Select -</option>
+                            </select>
+                            <i data-lucide="chevron-down" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none w-3 h-3"></i>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Anes.</label>
+                        <div class="relative">
+                            <select id="select-anes" onchange="updateSession('anesthesiaType', this.value)" class="w-full appearance-none bg-white dark:bg-[#151f32] border border-gray-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs font-semibold text-gray-800 dark:text-slate-200 outline-none focus:ring-0 focus:border-gray-200 dark:focus:border-slate-700 transition-all">
+                                <option value="LA">LA</option>
+                                <option value="GA">GA</option>
+                            </select>
+                            <i data-lucide="chevron-down" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none w-3 h-3"></i>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Coverage</label>
+                        <div class="relative">
+                            <select id="select-coverage" onchange="updateSession('healthCoverage', this.value)" class="w-full appearance-none bg-white dark:bg-[#151f32] border border-gray-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs font-semibold text-gray-800 dark:text-slate-200 outline-none focus:ring-0 focus:border-gray-200 dark:focus:border-slate-700 transition-all">
+                                <option value="CSMBS">CSMBS</option>
+                                <option value="SSS">SSS</option>
+                                <option value="UCS">UCS</option>
+                                <option value="CASH">CASH (สด)</option>
+                            </select>
+                            <i data-lucide="chevron-down" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none w-3 h-3"></i>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-5 transition-colors duration-300">
+                <div class="flex items-center justify-between mb-3 sm:mb-4 border-b border-gray-50 dark:border-slate-800 pb-2 sm:pb-3">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="check-square" class="text-[#8e5a7d] dark:text-brand-tertiary-dark w-4 h-4 sm:w-[18px] sm:h-[18px]"></i>
+                        <h2 class="text-xs sm:text-sm font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide">Procedure</h2>
+                    </div>
+                    <button onclick="resetProcedureSection()" class="flex items-center gap-1 text-[9px] sm:text-[10px] uppercase font-bold text-gray-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 bg-gray-100 dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-900/30 px-2 py-1 flex-shrink-0 rounded transition-colors">
+                        <i data-lucide="refresh-cw" class="w-2.5 h-2.5 sm:w-[12px] sm:h-[12px]"></i> Reset
+                    </button>
+                </div>
+
+                <div class="space-y-3 sm:space-y-5" id="procedures-container"></div>
+                
+                <div class="mt-2 sm:mt-3">
+                    <input 
+                        type="text" 
+                        id="custom-procedure-input"
+                        placeholder="Or type custom procedure..."
+                        onkeyup="handleCustomInput(event)"
+                        class="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg sm:rounded-xl px-2.5 py-1.5 sm:px-3 sm:py-2 text-[11px] sm:text-sm font-medium outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
+                    />
+                    <p id="missing-required-warning" class="hidden text-xs font-bold text-red-500 dark:text-red-400 mt-2 flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-red-500 dark:bg-red-400 animate-pulse"></span>
+                        Please select at least one procedure
+                    </p>
+                </div>
+            </section>
+
+            <div id="cost-card-container"></div>
+
+            <div id="checklists-container" class="space-y-4 animate-fadeIn mb-8 hidden">
+                <section class="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-5 transition-colors duration-300">
+                    <div class="flex items-center justify-between mb-3 sm:mb-4 border-b border-gray-50 dark:border-slate-800 pb-2 sm:pb-3">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="list-checks" class="text-[#8e5a7d] dark:text-brand-primary-dark w-4 h-4 sm:w-[18px] sm:h-[18px]" stroke-width="2.5"></i>
+                            <h2 class="text-xs sm:text-sm font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide">Pre-Operative Checklist</h2>
+                        </div>
+                        <span id="actions-count" class="flex items-center gap-1 text-[9px] sm:text-[10px] uppercase font-bold text-gray-500 dark:text-slate-400 bg-gray-100 dark:bg-slate-800 px-2 py-1 flex-shrink-0 rounded">0 SELECTED</span>
+                    </div>
+                    <div id="actions-list" class="grid grid-cols-1 divide-y divide-gray-50 dark:divide-slate-800/50 -my-1.5 sm:-my-2"></div>
+                    <div class="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-gray-50 dark:border-slate-800 flex justify-center">
+                        <button onclick="toggleShowAll('actions')" id="actions-toggle-btn" class="flex items-center gap-1.5 text-[9px] sm:text-[10px] font-bold text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 transition-colors uppercase tracking-wider py-1 sm:py-1.5 px-3 sm:px-4 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800">
+                            Show All Actions <i data-lucide="chevron-down" class="w-3 h-3 sm:w-[14px] sm:h-[14px]"></i>
+                        </button>
+                    </div>
+                </section>
+
+                <section class="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-5 transition-colors duration-300">
+                    <div class="flex items-center justify-between mb-3 sm:mb-4 border-b border-gray-50 dark:border-slate-800 pb-2 sm:pb-3">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="syringe" class="text-[#8e5a7d] dark:text-brand-primary-dark w-4 h-4 sm:w-[18px] sm:h-[18px]" stroke-width="2.5"></i>
+                            <h2 class="text-xs sm:text-sm font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide">Surgical Tools Checklist</h2>
+                        </div>
+                        <span id="tools-count" class="flex items-center gap-1 text-[9px] sm:text-[10px] uppercase font-bold text-gray-500 dark:text-slate-400 bg-gray-100 dark:bg-slate-800 px-2 py-1 flex-shrink-0 rounded">0 SELECTED</span>
+                    </div>
+                    <div id="tools-list" class="grid grid-cols-1 divide-y divide-gray-50 dark:divide-slate-800/50 -my-1.5 sm:-my-2"></div>
+                    <div class="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-gray-50 dark:border-slate-800 flex justify-center">
+                        <button onclick="toggleShowAll('tools')" id="tools-toggle-btn" class="flex items-center gap-1.5 text-[9px] sm:text-[10px] font-bold text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 transition-colors uppercase tracking-wider py-1 sm:py-1.5 px-3 sm:px-4 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800">
+                            Add Tools <i data-lucide="chevron-down" class="w-3 h-3 sm:w-[14px] sm:h-[14px]"></i>
+                        </button>
+                    </div>
+                </section>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        const ANESTHESIA_TYPES = { LA: 'LA', GA: 'GA' };
+        const COVERAGE_TYPES = { CSMBS: 'CSMBS', SSS: 'SSS', UCS: 'UCS', CASH: 'CASH' };
+        const NEW_REUSED_OPTIONS = { NEW: 'New', REUSED: 'Reused' };
+        const MACHINE_TYPES = { CENTURION: 'Centurion', LEGION: 'Legion' };
+        const MP_TYPES = ['RRD', 'TRD', 'MH', 'ERM'];
+        const GDI_TYPES = ['Ahmed', 'XEN', 'Express GFD', 'Preserflo', 'AADI'];
+        const PPV_TYPES = ['23G', '25G'];
+
+        const SURGEON_GROUPS = {
+          'A': ['รุ่งเกียรติ', 'อรณิสา', 'อัจฉริยา', 'ดำรงค์'],
+          'B': ['อทิตยา', 'ภารดี', 'นภาพร', 'เหมือนพลอย', 'ลินดา'],
+          'C': ['เจนจิต', 'เกษรา', 'จุฬาลักษณ์', 'พิชญา', 'ภาวิณี'],
+          'D': ['ดิเรก', 'วรพร', 'ธิดารัตน์', 'พิชญ์', 'ธัญญลักษณ์'],
+          'Others': ['Resident', 'Fellow'],
+        };
+
+        const CENTURION_PREFERRED_SURGEONS = ['เกษรา', 'นภาพร', 'ลินดา'];
+
+        const BASE_ACTIONS = [
+          { id: 'axl', item: 'วัด AXL', type: 'checkbox', checked: false, note: '' },
+          { id: 'iol', item: 'วัด IOL', type: 'checkbox', checked: false, note: '' },
+          { id: 'b-scan', item: 'B-scan', type: 'checkbox', checked: false, note: '' },
+          { id: 'oct-macula', item: 'OCT macula / ONH / GCC', type: 'checkbox', checked: false, note: '' },
+          { id: 'anterior-photo', item: 'Anterior photo', type: 'checkbox', checked: false, note: '' },
+          { id: 'posterior-photo', item: 'posterior photo', type: 'checkbox', checked: false, note: '' },
+          { id: 'sclera-amnion-eye-bank', item: 'จอง Sclera/Amnion (Eye bank)', type: 'checkbox', checked: false, note: '' },
+          { id: 'iop', item: 'วัด IOP', type: 'checkbox', checked: false, note: '' },
+          { id: 'measure-strabismus', item: 'ส่งวัดมุมเข', type: 'checkbox', checked: false, note: '' },
+          { id: 'photo-oculoplastic', item: 'ถ่ายรูป oculoplastic', type: 'checkbox', checked: false, note: '' },
+          { id: 'irrigation-probing', item: 'Irrigation & Probing', type: 'checkbox', checked: false, note: '' },
+          { id: 'key-mmc', item: 'Key MMC', type: 'checkbox', checked: false, note: '' }
+        ];
+
+        const BASE_TOOLS = [
+          { id: 'ppv-set', item: 'PPV set', type: 'radio', options: [{ label: 'Constellation', value: 'Constellation' }, { label: 'Stellaris', value: 'Stellaris' }], selectedValue: 'Stellaris', checked: false, note: '' },
+          { id: 'soft-tip', item: 'Soft tip', type: 'checkbox', checked: false, note: '' },
+          { id: '15-degree-blade', item: '15 degree blade', type: 'checkbox', checked: false, note: '' },
+          { id: 'slit-knife', item: 'Slit Knife', type: 'checkbox', checked: false, note: '' },
+          { id: 'crescent-knife', item: 'Crescent Knife', type: 'checkbox', checked: false, note: '' },
+          { id: 'punch-trephine', item: 'Punch & Trephine', options: [{ label: NEW_REUSED_OPTIONS.NEW, value: NEW_REUSED_OPTIONS.NEW }, { label: NEW_REUSED_OPTIONS.REUSED, value: NEW_REUSED_OPTIONS.REUSED }], selectedValue: null, value: ['', ''], checked: false, note: 'Enter Punch No. and Trephine No.' },
+          { id: 'cts', item: 'CTS', type: 'checkbox', checked: false, note: '' },
+          { id: 'glaucoma-device', item: 'Glaucoma Drainage Device (GDD)', type: 'radio', options: [{ label: 'Ahmed', value: 'ahmed-valve' }, { label: 'XEN', value: 'gdi-xen-room' }, { label: 'Express', value: 'gfd-express' }, { label: 'Preserflo', value: 'preserflo-shunt' }, { label: 'AADI', value: 'aadi-shunt' }], selectedValue: 'ahmed-valve', checked: false, note: 'Select device model' },
+          { id: 'ctr-no', item: 'CTR No.', type: 'radio', options: [{ label: 'AuroRing (1381฿)', value: 'ctr-auroring' }, { label: 'Tensiobag (2200฿)', value: 'ctr-tensiobag' }], selectedValue: 'ctr-auroring', checked: false, note: 'AXL<24: no.12, AXL 24-28: no.13, AXL>28: no.14' },
+          { id: 'micro-scissor', item: 'Micro-scissor', type: 'radio', options: [{ label: NEW_REUSED_OPTIONS.NEW, value: NEW_REUSED_OPTIONS.NEW }, { label: NEW_REUSED_OPTIONS.REUSED, value: NEW_REUSED_OPTIONS.REUSED }], selectedValue: null, checked: false, note: '' },
+          { id: 'bbg', item: 'BBG', type: 'checkbox', checked: false, note: '' },
+          { id: 'ilm-forceps', item: 'ILM forceps', type: 'radio', options: [{ label: NEW_REUSED_OPTIONS.NEW, value: NEW_REUSED_OPTIONS.NEW }, { label: NEW_REUSED_OPTIONS.REUSED, value: NEW_REUSED_OPTIONS.REUSED }], selectedValue: null, checked: false, note: '' },
+          { id: 'silicone-oil', item: 'Silicone oil', type: 'checkbox', checked: false, note: '' },
+          { id: 'silicone-oil-hd', item: 'Silicone Oil HD', type: 'checkbox', checked: false, note: '' },
+          { id: 'endolaser', item: 'Endolaser', type: 'checkbox', checked: false, note: '' },
+          { id: 'centurion-legion', item: 'Centurion / Legion', type: 'radio', options: [{ label: MACHINE_TYPES.CENTURION, value: MACHINE_TYPES.CENTURION }, { label: MACHINE_TYPES.LEGION, value: MACHINE_TYPES.LEGION }], selectedValue: null, checked: false, note: '' },
+          { id: 'iris-retractor', item: 'Iris retractor', type: 'radio', options: [{ label: NEW_REUSED_OPTIONS.NEW, value: NEW_REUSED_OPTIONS.NEW }, { label: NEW_REUSED_OPTIONS.REUSED, value: NEW_REUSED_OPTIONS.REUSED }], selectedValue: null, checked: false, note: '' },
+          { id: '5fu', item: '5FU', type: 'checkbox', checked: false, note: '' },
+          { id: 'fibrin-glue', item: 'Fibrin glue', type: 'checkbox', checked: false, note: '' },
+        ];
+
+        const OPERATIONS_DATA = [
+          { name: "Phaco", category: "Lens Surgery", keywords: ["Phaco", "Phacoemulsification"], actions: [{ id: 'axl', checked: true }], tools: [{ id: 'slit-knife', checked: true }, { id: 'centurion-legion', checked: true }] },
+          { name: "IOL", category: "Lens Surgery", keywords: ["IOL"], actions: [{ id: 'iol', checked: true }], tools: [] },
+          { name: "ECCE", category: "Lens Surgery", keywords: ["ECCE"], actions: [{ id: 'axl', checked: true }], tools: [{ id: 'slit-knife', checked: true }, { id: '15-degree-blade', checked: true }] },
+          { name: "SF-IOL", category: "Lens Surgery", keywords: ["SF-IOL", "Sf + iol", "SF IOL", "SFIOL"], actions: [{ id: 'iol', checked: true }], tools: [{ id: 'slit-knife', checked: true }, { id: '15-degree-blade', checked: true }] },
+          { name: "CTR", category: "Lens Surgery", keywords: ["CTR", "Capsular tension ring"], actions: [], tools: [{ id: 'ctr-no', checked: true }] },
+          { name: "CTS", category: "Lens Surgery", keywords: ["CTS", "Capsular tension segment"], actions: [], tools: [{ id: 'cts', checked: true }] },
+          { name: "Iris retractor", category: "Lens Surgery", keywords: ["Iris retractor", "Iris retractors"], actions: [], tools: [{ id: 'iris-retractor', checked: true }] },
+          { name: "PPV", category: "Retinal Surgery", keywords: ["PPV", "Vitrectomy"], actions: [], tools: [{ id: 'ppv-set', checked: true }] },
+          { name: "MP", category: "Retinal Surgery", keywords: ["MP", "Membrane peeling", "ILM"], actions: [], tools: [] },
+          { name: "EL", category: "Retinal Surgery", keywords: ["EL", "Endolaser"], actions: [], tools: [{ id: 'endolaser', checked: true }] },
+          { name: "SO", category: "Retinal Surgery", keywords: ["SO", "SOI", "Silicone oil injection"], actions: [], tools: [{ id: 'silicone-oil', checked: true }] },
+          { name: "HD SO", category: "Retinal Surgery", keywords: ["HD SO", "Heavy SO", "Heavy Silicone Oil"], actions: [], tools: [{ id: 'silicone-oil-hd', checked: true }] },
+          { name: "GDI", category: "Glaucoma", keywords: ["GDI", "GD", "Drainage implant", "XEN", "Ahmed", "Preserflo", "GFD Express", "AADI"], actions: [{ id: 'iop', checked: true }, { id: 'sclera-amnion-eye-bank', checked: true }], tools: [{ id: 'glaucoma-device', checked: true }, { id: '15-degree-blade', checked: true }] },
+          { name: "Tx + MMC", category: "Glaucoma", keywords: ["Tx+MMC", "Tx + MMC", "trabeculectomy"], actions: [{ id: 'iop', checked: true }, { id: 'key-mmc', checked: true }], tools: [{ id: '15-degree-blade', checked: true }] },
+          { name: "PKP", category: "Cornea", keywords: ["PKP", "Keratoplasty"], actions: [{ id: 'sclera-amnion-eye-bank', checked: true }, { id: 'anterior-photo', checked: true }], tools: [{ id: '15-degree-blade', checked: true }, { id: 'punch-trephine', checked: true }, { id: 'slit-knife', checked: true }] },
+          { name: "Sclera/Amnion", category: "Cornea", keywords: ["Sclera graft", "Scleral graft", "Amnion graft", "AMT"], actions: [{ id: 'sclera-amnion-eye-bank', checked: true }], tools: [] },
+          { name: "EDCR", category: "Oculoplastics and Strabismus", keywords: ["EDCR", "DCR"], actions: [{ id: 'irrigation-probing', checked: true }], tools: [{ id: 'slit-knife', checked: true }, { id: 'crescent-knife', checked: true }] },
+          { name: "Oculoplastic", category: "Oculoplastics and Strabismus", keywords: ["Oculoplastic", "Frontalis", "Sling", "Ptosis", "Lid", "Entropion", "Ectropion", "Blepharoplasty"], actions: [{ id: 'photo-oculoplastic', checked: true }], tools: [] },
+          { name: "Strabismus", category: "Oculoplastics and Strabismus", keywords: ["Strabismus", "Squint", "Muscle", "Recession", "Resection"], actions: [{ id: 'measure-strabismus', checked: true }], tools: [] }
+        ];
+
+        const TOOL_PRICES = {
+          '15-degree-blade': { name: 'Knife-15 degree (Mani)', CSMBS: 220, SSS: 220, UCS: 220, CASH: 220 },
+          'slit-knife': { name: 'Slit Knife', CSMBS: 0, SSS: 0, UCS: 0, CASH: 0 },
+          'crescent-knife': { name: 'Crescent Bevel Up 2.3 mm', CSMBS: 325, SSS: 325, UCS: 325, CASH: 325 },
+          'centurion-legion': {
+            'Centurion': { name: 'Centurion Machine', CSMBS: 2140, SSS: 2140, UCS: 2140, CASH: 2140 },
+            'Legion': { name: 'Legion Machine', CSMBS: 0, SSS: 0, UCS: 0, CASH: 0 },
+          },
+          'ctr-no': {
+            'ctr-auroring': { name: 'AuroRing/CTR/CTS', CSMBS: 0, SSS: 1381, UCS: 1381, CASH: 1381 },
+            'ctr-tensiobag': { name: 'Tensiobag CTR', CSMBS: 0, SSS: 2200, UCS: 2200, CASH: 2200 }
+          },
+          'cts': { name: 'AuroRing/CTR/CTS', CSMBS: 0, SSS: 1381, UCS: 1381, CASH: 1381 },
+          'iris-retractor': { name: 'Iris Retractors', CSMBS: 1565, SSS: 1565, UCS: 1565, CASH: 1565 },
+          'glaucoma-device': {
+            'ahmed-valve': { name: 'Ahmed Glaucoma Valve', CSMBS: 1660, SSS: 1660, UCS: 1660, CASH: 17660 },
+            'gdi-xen-room': { name: 'Xen Glaucoma gel Implant', CSMBS: 17785, SSS: 19785, UCS: 19785, CASH: 27785 },
+            'preserflo-shunt': { name: 'Preserflo Microshunt', CSMBS: 23061, SSS: 25061, UCS: 25061, CASH: 33061 },
+            'gfd-express': { name: 'Express GFD / Alcon', CSMBS: 8190, SSS: 10190, UCS: 10190, CASH: 18190 },
+            'aadi-shunt': { name: 'Glaucoma shunt AADI / Aquastar', CSMBS: 0, SSS: 0, UCS: 0, CASH: 6500 }
+          },
+          'ppv-set': {
+            '23G_Constellation': { name: 'Constellation 23G Vitrectomy', CSMBS: 2150, SSS: 2150, UCS: 2150, CASH: 2150 },
+            '25G_Constellation': { name: 'Constellation 25G Vitrectomy', CSMBS: 2150, SSS: 2150, UCS: 2150, CASH: 2150 },
+            '23G_Stellaris': { name: 'Stellaris Vitrectomy Set 23 G B&L', CSMBS: 2150, SSS: 2150, UCS: 2150, CASH: 11150 },
+            '25G_Stellaris': { name: 'Stellaris Vitrectomy Set 25 G B&L', CSMBS: 2150, SSS: 2150, UCS: 2150, CASH: 11150 },
+          },
+          'ilm-forceps': { name: 'ILM Forcep Tip', CSMBS: 3600, SSS: 6300, UCS: 6300, CASH: 6300 },
+          'micro-scissor': { name: 'Microscissors', CSMBS: 3600, SSS: 6300, UCS: 6300, CASH: 6300 },
+          'bbg': { name: 'Ocublue 0.05% (BBG Solution)', CSMBS: 910, SSS: 910, UCS: 910, CASH: 910 },
+          'silicone-oil': { name: 'Oxane Silicone Oil', CSMBS: 400, SSS: 400, UCS: 400, CASH: 5800 },
+          'silicone-oil-hd': { name: 'Oxane HD (Heavy Oil)', CSMBS: 8500, SSS: 8500, UCS: 8500, CASH: 13900 },
+          'endolaser': { name: 'Endolaser', CSMBS: 2500, SSS: 2500, UCS: 2500, CASH: 2500 },
+          'soft-tip': { name: 'Soft Tip', CSMBS: 514, SSS: 514, UCS: 514, CASH: 514 },
+          'punch-trephine': { name: 'Punch & Trephine', CSMBS: 12000, SSS: 12000, UCS: 12000, CASH: 12000 },
+          '5fu': { name: '5FU', CSMBS: 0, SSS: 0, UCS: 0, CASH: 0 },
+          'fibrin-glue': { name: 'Fibrin glue', CSMBS: 0, SSS: 0, UCS: 0, CASH: 0 },
+        };
+
+        let state = {
+            isDarkMode: false,
+            showAll: { actions: false, tools: false },
+            session: {
+                id: 'id-' + Date.now(),
+                diagnosis: '',
+                operationInput: '',
+                surgeonName: '',
+                anesthesiaType: ANESTHESIA_TYPES.LA,
+                healthCoverage: COVERAGE_TYPES.UCS,
+                actions: JSON.parse(JSON.stringify(BASE_ACTIONS)),
+                tools: JSON.parse(JSON.stringify(BASE_TOOLS)),
+                mpSelectedTypes: []
+            }
+        };
+
+        function normalizeText(text) {
+            return text.toLowerCase().replace(/[^a-z0-9\u0E00-\u0E7F]/g, ' ').replace(/\s+/g, ' ').trim();
+        }
+
+        function parseOperations(inputStr) {
+            let parts = (inputStr || '').split('+').map(s => s.trim()).filter(Boolean);
+            let res = [];
+            for (let i = 0; i < parts.length; i++) {
+                if (parts[i].toUpperCase() === 'MMC' && res.length > 0) {
+                    res[res.length - 1] += ' + ' + parts[i];
+                } else {
+                    res.push(parts[i]);
+                }
+            }
+            return res;
+        }
+
+        function getSurgeonGroup(name) {
+            if (!name) return '';
+            for (const [group, names] of Object.entries(SURGEON_GROUPS)) {
+                if (names.some(n => name.includes(n))) return group;
+            }
+            return '';
+        }
+
+        function getSurgeonGroupColorClass(group) {
+            const colors = {
+                'A': 'bg-emerald-500 dark:bg-emerald-400 text-white dark:text-slate-900 border-emerald-600 dark:border-emerald-500 shadow-sm',
+                'B': 'bg-pink-500 dark:bg-pink-400 text-white dark:text-slate-900 border-pink-600 dark:border-pink-500 shadow-sm',
+                'C': 'bg-brand-secondary dark:bg-brand-secondary-dark text-white dark:text-brand-neutral-dark border-brand-secondary dark:border-brand-secondary-dark shadow-sm',
+                'D': 'bg-cyan-600 dark:bg-brand-tertiary-dark text-white dark:text-brand-neutral-dark border-cyan-600 dark:border-brand-tertiary-dark shadow-sm'
+            };
+            return colors[group.toUpperCase()] || 'bg-gray-500 dark:bg-slate-400 text-white dark:text-slate-900 border-gray-600 dark:border-slate-500 shadow-sm';
+        }
+
+        function applyMpToolsLogic(tools, mpTypes) {
+            const needBbgIlm = mpTypes.includes('ERM') || mpTypes.includes('MH');
+            const needScissors = mpTypes.includes('TRD');
+            const bbg = tools.find(t => t.id === 'bbg');
+            const ilm = tools.find(t => t.id === 'ilm-forceps');
+            const scissors = tools.find(t => t.id === 'micro-scissor');
+            
+            if (bbg) bbg.checked = needBbgIlm;
+            if (ilm) {
+                ilm.checked = needBbgIlm;
+                if (needBbgIlm && !ilm.selectedValue) ilm.selectedValue = NEW_REUSED_OPTIONS.NEW; 
+            }
+            if (scissors) scissors.checked = needScissors;
+        }
+
+        function recalculateChecklist() {
+            const sess = state.session;
+            const rawOpText = sess.operationInput + ' ' + (sess.diagnosis || '');
+            const normalizedOpText = normalizeText(rawOpText);
+            
+            sess.actions = JSON.parse(JSON.stringify(BASE_ACTIONS));
+            sess.tools = JSON.parse(JSON.stringify(BASE_TOOLS));
+            
+            let matchedCategories = new Set();
+            let showMp = false;
+
+            OPERATIONS_DATA.forEach(op => {
+                const isMatch = op.keywords.some(k => {
+                    const normalizedKeyword = normalizeText(k);
+                    let textToTest = normalizedOpText;
+                    if (normalizedKeyword === 'so' || normalizedKeyword === 'soi') {
+                        textToTest = textToTest.replace(/\bhd so\b/g, '').replace(/\bheavy so\b/g, '');
+                    }
+                    if (normalizedKeyword.length <= 2) {
+                        return new RegExp(`\\b${normalizedKeyword}\\b`).test(textToTest);
+                    }
+                    return textToTest.includes(normalizedKeyword);
+                });
+
+                if (isMatch) {
+                    matchedCategories.add(op.category);
+                    op.actions.forEach(a => {
+                        const item = sess.actions.find(i => i.id === a.id);
+                        if (item) { item.checked = true; item.autoPopulated = true; if (a.selectedValue) item.selectedValue = a.selectedValue; }
+                    });
+                    op.tools.forEach(t => {
+                        const item = sess.tools.find(i => i.id === t.id);
+                        if (item) { item.checked = true; item.autoPopulated = true; if (t.selectedValue) item.selectedValue = t.selectedValue; }
+                    });
+                    if (op.name === "MP") showMp = true;
+                }
+            });
+
+            if (sess.anesthesiaType === ANESTHESIA_TYPES.LA) {
+                if (!matchedCategories.has("Glaucoma") && !matchedCategories.has("Oculoplastics and Strabismus")) {
+                    const axl = sess.actions.find(a => a.id === 'axl');
+                    if (axl) { axl.checked = true; axl.autoPopulated = true; }
+                }
+            }
+
+            let finalMpTypes = [...sess.mpSelectedTypes]; 
+            const addMpType = (t) => { if (!finalMpTypes.includes(t)) finalMpTypes.push(t); };
+            if (normalizedOpText.includes('erm') || normalizedOpText.includes('epiretinal')) addMpType('ERM');
+            if (normalizedOpText.includes('mh') || normalizedOpText.includes('macular hole')) addMpType('MH');
+            if (normalizedOpText.includes('trd')) addMpType('TRD');
+            if (normalizedOpText.includes('rrd')) addMpType('RRD');
+            if (normalizedOpText.includes('ilm')) { showMp = true; addMpType('ERM'); }
+            
+            if (showMp || finalMpTypes.length > 0) applyMpToolsLogic(sess.tools, finalMpTypes);
+
+            if (state.session.diagnosis.includes('25G')) {
+                const ilm = sess.tools.find(t => t.id === 'ilm-forceps');
+                if (ilm && ilm.checked) ilm.selectedValue = NEW_REUSED_OPTIONS.NEW;
+                const scissors = sess.tools.find(t => t.id === 'micro-scissor');
+                if (scissors && scissors.checked) scissors.selectedValue = NEW_REUSED_OPTIONS.NEW;
+            }
+
+            if (normalizedOpText.includes('phaco') || normalizedOpText.includes('phacoemulsification')) {
+                const machineTool = sess.tools.find(t => t.id === 'centurion-legion');
+                if (machineTool) {
+                    machineTool.checked = true; machineTool.autoPopulated = true;
+                    const normalizedSurgeon = normalizeText(sess.surgeonName);
+                    const prefersCenturion = CENTURION_PREFERRED_SURGEONS.some(s => normalizedSurgeon.includes(normalizeText(s).trim()));
+                    machineTool.selectedValue = prefersCenturion ? MACHINE_TYPES.CENTURION : MACHINE_TYPES.LEGION;
+                }
+            }
+
+            const gdiTool = sess.tools.find(t => t.id === 'glaucoma-device');
+            if (gdiTool && gdiTool.checked) {
+                const mapping = { 'ahmed': 'ahmed-valve', 'xen': 'gdi-xen-room', 'express': 'gfd-express', 'preserflo': 'preserflo-shunt', 'aadi': 'aadi-shunt' };
+                for (const [key, val] of Object.entries(mapping)) { if (normalizedOpText.includes(key)) { gdiTool.selectedValue = val; break; } }
+            }
+
+            const ppvSet = sess.tools.find(t => t.id === 'ppv-set');
+            if (ppvSet && ppvSet.checked) {
+                const softTip = sess.tools.find(t => t.id === 'soft-tip');
+                if (softTip) { softTip.checked = true; softTip.autoPopulated = true; }
+            }
+        }
+
+        function toggleTheme() {
+            state.isDarkMode = !state.isDarkMode;
+            document.documentElement.classList.toggle('dark', state.isDarkMode);
+            const btn = document.getElementById('theme-toggle-btn');
+            const slider = document.getElementById('theme-toggle-slider');
+            const icon = document.getElementById('theme-icon');
+            
+            btn.classList.toggle('bg-gray-200', !state.isDarkMode);
+            btn.classList.toggle('bg-brand-primary-dark', state.isDarkMode);
+            slider.classList.toggle('translate-x-1', !state.isDarkMode);
+            slider.classList.toggle('translate-x-6', state.isDarkMode);
+            icon.setAttribute('data-lucide', state.isDarkMode ? 'moon' : 'sun');
+            icon.classList.toggle('text-gray-400', !state.isDarkMode);
+            icon.classList.toggle('text-brand-primary-dark', state.isDarkMode);
+            lucide.createIcons();
+        }
+
+        function updateSession(key, value) {
+            state.session[key] = value;
+            recalculateChecklist();
+            render();
+        }
+
+        function updateChecklistItem(listName, id, key, value) {
+            if (key === 'selectedValue' && state.session.diagnosis.includes("25G") && (id === 'micro-scissor' || id === 'ilm-forceps') && value === NEW_REUSED_OPTIONS.REUSED) return;
+            const item = state.session[listName].find(i => i.id === id);
+            if (item) { item[key] = value; render(); }
+        }
+
+        function updateArrayItemValue(listName, id, index, val) {
+            const item = state.session[listName].find(i => i.id === id);
+            if (item && Array.isArray(item.value)) { item.value[index] = val; render(); }
+        }
+
+        function resetProcedureSection() {
+            state.session.operationInput = '';
+            state.session.diagnosis = '';
+            recalculateChecklist();
+            render();
+        }
+
+        function toggleProcedureKeyword(keyword) {
+            let currentVals = parseOperations(state.session.operationInput);
+            if (currentVals.includes(keyword)) {
+                currentVals = currentVals.filter(v => v !== keyword);
+                let currentDiags = state.session.diagnosis.split(',').map(s => s.trim()).filter(Boolean);
+                if (keyword === 'PPV') currentDiags = currentDiags.filter(d => !PPV_TYPES.includes(d));
+                if (keyword === 'MP') currentDiags = currentDiags.filter(d => !MP_TYPES.includes(d));
+                if (keyword === 'GDI') currentDiags = currentDiags.filter(d => !GDI_TYPES.includes(d));
+                state.session.diagnosis = currentDiags.join(', ');
+            } else {
+                currentVals.push(keyword);
+                if (['MP', 'EL', 'SO', 'HD SO'].includes(keyword) && !currentVals.includes('PPV')) currentVals.push('PPV');
+                if (keyword === 'PPV' || ['MP', 'EL', 'SO', 'HD SO'].includes(keyword)) {
+                    let currentDiags = state.session.diagnosis.split(',').map(s => s.trim()).filter(Boolean);
+                    if (!currentDiags.some(d => PPV_TYPES.includes(d))) { currentDiags.push('23G'); state.session.diagnosis = currentDiags.join(', '); }
+                }
+            }
+            updateSession('operationInput', currentVals.join(' + '));
+        }
+
+        function toggleDiagnosisKeyword(keyword, exclusiveGroup) {
+            let currentVals = state.session.diagnosis.split(',').map(s => s.trim()).filter(Boolean);
+            if (currentVals.includes(keyword)) {
+                currentVals = currentVals.filter(v => v !== keyword);
+            } else {
+                if (exclusiveGroup) currentVals = currentVals.filter(v => !exclusiveGroup.includes(v));
+                currentVals.push(keyword);
+            }
+            updateSession('diagnosis', currentVals.join(', '));
+        }
+
+        function handleCustomInput(e) { updateSession('operationInput', e.target.value); }
+
+        function toggleItemRNMode(id) {
+            const tool = state.session.tools.find(t => t.id === id);
+            if (tool && tool.options) {
+                if (state.session.diagnosis.includes("25G") && (id === 'micro-scissor' || id === 'ilm-forceps')) return;
+                tool.selectedValue = tool.selectedValue === NEW_REUSED_OPTIONS.REUSED ? NEW_REUSED_OPTIONS.NEW : NEW_REUSED_OPTIONS.REUSED;
+                render();
+            }
+        }
+
+        function resetCaseBasics() {
+            state.session.surgeonName = '';
+            state.session.anesthesiaType = ANESTHESIA_TYPES.LA;
+            state.session.healthCoverage = COVERAGE_TYPES.UCS;
+            state.session.operationInput = '';
+            state.session.diagnosis = '';
+            recalculateChecklist();
+            render();
+        }
+
+        function toggleShowAll(listName) {
+            state.showAll[listName] = !state.showAll[listName];
+            render();
+        }
+
+        function renderCaseBasics() {
+            const surgeonSelect = document.getElementById('select-surgeon');
+            if(surgeonSelect.options.length <= 1) {
+                Object.values(SURGEON_GROUPS).flat().sort().forEach(name => {
+                    const opt = document.createElement('option'); opt.value = name; opt.innerText = name; surgeonSelect.appendChild(opt);
+                });
+            }
+            surgeonSelect.value = state.session.surgeonName;
+            document.getElementById('select-anes').value = state.session.anesthesiaType;
+            document.getElementById('select-coverage').value = state.session.healthCoverage;
+            const group = getSurgeonGroup(state.session.surgeonName);
+            const badge = document.getElementById('surgeon-group-badge');
+            if (group) { badge.className = `items-center justify-center min-w-[20px] h-5 px-1.5 rounded-md text-[10px] font-black border uppercase inline-flex ${getSurgeonGroupColorClass(group)}`; badge.innerText = group; }
+            else { badge.className = 'hidden'; }
+        }
+
+        function renderProcedures() {
+            const container = document.getElementById('procedures-container');
+            container.innerHTML = '';
+            const opsArray = parseOperations(state.session.operationInput);
+            const diagsArray = state.session.diagnosis.split(',').map(s => s.trim()).filter(Boolean);
+            const groups = {};
+            OPERATIONS_DATA.forEach(op => { if (!groups[op.category]) groups[op.category] = []; groups[op.category].push(op); });
+
+            for (const [category, ops] of Object.entries(groups)) {
+                let html = `<div class="mb-3 sm:mb-4 last:mb-0"><label class="text-[10px] sm:text-xs font-bold text-gray-500 dark:text-slate-400 block mb-1.5 sm:mb-2">${category}</label><div class="flex flex-wrap gap-1.5 sm:gap-2 items-center">`;
+                ops.forEach(op => {
+                    const isSelected = opsArray.includes(op.name);
+                    const btnClass = isSelected ? 'bg-[#fcb7f0] dark:bg-[#fcb7f0] text-slate-800 dark:text-slate-800 border-[#fcb7f0] dark:border-[#fcb7f0] shadow-md scale-[1.02]' : 'bg-white dark:bg-[#151f32] text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-[#fcb7f0]/50 dark:hover:border-[#fcb7f0]/50 hover:bg-[#fcb7f0]/5 dark:hover:bg-[#fcb7f0]/5';
+                    html += `<button onclick="toggleProcedureKeyword('${op.name}')" class="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-bold transition-all border shrink-0 ${btnClass}"><i data-lucide="${isSelected ? 'check-circle' : 'plus'}" class="inline mr-1 w-3.5 h-3.5 ${isSelected ? '' : 'opacity-50'}"></i>${op.name}</button>`;
+                });
+                html += `</div>`;
+
+                let subTagsHtml = '';
+                if (category === 'Retinal Surgery') {
+                    if (opsArray.includes("PPV")) {
+                        subTagsHtml += `<div class="flex items-center gap-1.5 animate-fadeIn shrink-0"><span class="flex items-center text-pink-500/70 dark:text-pink-400/80 mr-0.5"><i data-lucide="corner-down-right" class="w-3.5 h-3.5"></i></span>`;
+                        PPV_TYPES.forEach(p => {
+                            const isDiag = diagsArray.includes(p);
+                            const c = isDiag ? 'bg-pink-500 dark:bg-pink-400 text-white dark:text-slate-900 border-pink-600 dark:border-pink-500 shadow-sm' : 'bg-pink-50 dark:bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-200 dark:border-pink-500/30 hover:bg-pink-100 dark:hover:bg-pink-500/20';
+                            subTagsHtml += `<button onclick="toggleDiagnosisKeyword('${p}', ['23G', '25G'])" class="px-2 py-1 rounded text-[10px] font-bold transition-all border ${c}">${p}</button>`;
+                        });
+                        subTagsHtml += `</div>`;
+                    }
+                    if (opsArray.includes("MP")) {
+                        subTagsHtml += `<div class="flex items-center gap-1.5 animate-fadeIn shrink-0"><span class="flex items-center text-brand-secondary/80 dark:text-brand-secondary-dark/80 mr-0.5"><i data-lucide="corner-down-right" class="w-3.5 h-3.5"></i></span>`;
+                        MP_TYPES.forEach(mp => {
+                            const isDiag = diagsArray.includes(mp);
+                            const c = isDiag ? 'bg-brand-secondary dark:bg-brand-secondary-dark text-white dark:text-brand-neutral-dark border-brand-secondary dark:border-brand-secondary-dark shadow-sm' : 'bg-brand-secondary/5 dark:bg-brand-secondary-dark/10 text-brand-secondary dark:text-brand-secondary-dark border-brand-secondary/30 dark:border-brand-secondary-dark/30 hover:bg-brand-secondary/20 dark:hover:bg-brand-secondary-dark/20';
+                            subTagsHtml += `<button onclick="toggleDiagnosisKeyword('${mp}')" class="px-2 py-1 rounded text-[10px] font-bold transition-all border ${c}">${mp}</button>`;
+                        });
+                        subTagsHtml += `</div>`;
+                    }
+                }
+                if (category === 'Glaucoma' && opsArray.includes("GDI")) {
+                    subTagsHtml += `<div class="flex items-center gap-1.5 animate-fadeIn shrink-0"><span class="flex items-center text-cyan-600/70 dark:text-brand-tertiary-dark/80 mr-0.5"><i data-lucide="corner-down-right" class="w-3.5 h-3.5"></i></span>`;
+                    GDI_TYPES.forEach(gdi => {
+                        const isDiag = diagsArray.includes(gdi);
+                        const c = isDiag ? 'bg-cyan-600 dark:bg-brand-tertiary-dark text-white dark:text-brand-neutral-dark border-cyan-600 dark:border-brand-tertiary-dark shadow-sm' : 'bg-cyan-600/5 dark:bg-brand-tertiary-dark/10 text-cyan-700 dark:text-brand-tertiary-dark border-cyan-600/30 dark:border-brand-tertiary-dark/30 hover:bg-cyan-600/20 dark:hover:bg-brand-tertiary-dark/20';
+                        subTagsHtml += `<button onclick="toggleDiagnosisKeyword('${gdi}', ['Ahmed', 'XEN', 'Express GFD', 'Preserflo', 'AADI'])" class="px-2 py-1 rounded text-[10px] font-bold transition-all border ${c}">${gdi}</button>`;
+                    });
+                    subTagsHtml += `</div>`;
+                }
+                if (subTagsHtml) html += `<div class="mt-2.5 flex flex-col sm:flex-row gap-2.5 sm:gap-4 pl-1">${subTagsHtml}</div>`;
+                html += `</div>`;
+                container.innerHTML += html;
+            }
+            document.getElementById('custom-procedure-input').value = state.session.operationInput;
+            const isMissing = state.session.operationInput.trim() === '';
+            document.getElementById('missing-required-warning').classList.toggle('hidden', !isMissing);
+            document.getElementById('checklists-container').classList.toggle('hidden', isMissing);
+            document.getElementById('cost-card-container').classList.toggle('hidden', isMissing);
+        }
+
+        function renderCostCard() {
+            if(state.session.operationInput.trim() === '') return;
+            const container = document.getElementById('cost-card-container');
+            let total = 0;
+            let breakdownHtml = '';
+            const hc = state.session.healthCoverage;
+
+            state.session.tools.forEach(tool => {
+                if (tool.checked) {
+                    const priceInfo = TOOL_PRICES[tool.id];
+                    if (priceInfo) {
+                        let price = 0; let itemName = '';
+                        let isReused = tool.selectedValue === NEW_REUSED_OPTIONS.REUSED;
+                        if (tool.id === 'ppv-set') {
+                            const tipSize = state.session.diagnosis.includes("25G") ? "25G" : "23G";
+                            const subItem = priceInfo[`${tipSize}_${tool.selectedValue}`];
+                            if (subItem) { price = subItem[hc] || 0; itemName = subItem.name; }
+                        } else if (tool.selectedValue && priceInfo[tool.selectedValue] && !isReused) {
+                            const subItem = priceInfo[tool.selectedValue]; price = subItem[hc] || 0; itemName = subItem.name;
+                        } else if (priceInfo.name) {
+                            price = isReused ? 0 : (priceInfo[hc] || 0); itemName = priceInfo.name;
+                        }
+                        if (itemName) {
+                            total += price;
+                            const isRestrictedRN = state.session.diagnosis.includes("25G") && (tool.id === 'micro-scissor' || tool.id === 'ilm-forceps');
+                            breakdownHtml += `<div class="flex justify-between items-center text-sm py-1"><div class="font-semibold text-white dark:text-brand-neutral-dark flex flex-wrap items-center mr-3 gap-2"><span>${itemName}</span>${tool.options && tool.options.some(o => o.value === NEW_REUSED_OPTIONS.NEW) && !isRestrictedRN ? `<div onclick="toggleItemRNMode('${tool.id}')" class="relative w-[64px] h-[22px] rounded-full cursor-pointer transition-colors duration-300 ease-in-out shrink-0 shadow-inner select-none ${!isReused ? 'bg-brand-secondary dark:bg-black/40' : 'bg-white/30 dark:bg-white/20'}"><div class="absolute top-[2px] left-[2px] w-[18px] h-[18px] bg-white rounded-full shadow-sm transform transition-transform duration-300 ease-in-out ${!isReused ? 'translate-x-0' : 'translate-x-[42px]'}"></div><span class="absolute top-1/2 -translate-y-1/2 text-[8px] font-black tracking-wider text-white transition-opacity duration-300 ${!isReused ? 'right-[6px] opacity-100' : 'opacity-0'}">NEW</span><span class="absolute top-1/2 -translate-y-1/2 text-[8px] font-black tracking-wider text-white dark:text-brand-neutral-dark transition-opacity duration-300 ${!isReused ? 'opacity-0' : 'left-[5px] opacity-100'}">REUSE</span></div>` : (isRestrictedRN ? `<span class="ml-2 shrink-0 text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider border border-[#fcb7f0] text-[#fcb7f0] dark:border-brand-neutral-dark/50 dark:text-brand-neutral-dark/80">NEW ONLY (25G)</span>` : '')}</div><span class="font-mono text-[#fcb7f0] dark:text-brand-neutral-dark/90 tracking-tight shrink-0 mt-0.5">${isReused ? '฿0' : `฿${price.toLocaleString()}`}</span></div>`;
+                        }
+                    }
+                }
+            });
+
+            container.innerHTML = `<div class="bg-brand-neutral-dark dark:bg-gradient-to-r dark:from-[#FCAAED] dark:to-[#F1B197] rounded-2xl shadow-xl p-6 text-white dark:text-brand-neutral-dark overflow-hidden relative animate-fadeIn transition-colors duration-300"><i data-lucide="calculator" class="absolute -right-4 -top-4 w-24 h-24 opacity-10 dark:opacity-20"></i><h3 class="text-xs font-headline font-black uppercase tracking-widest text-slate-300 dark:text-brand-neutral-dark/70 mb-2">Estimated Tooling Cost</h3><div class="text-4xl font-headline font-black mb-1 leading-none text-[#fcb7f0] dark:text-brand-neutral-dark">${total.toLocaleString()}</div><div class="text-xs font-bold text-slate-400 dark:text-brand-neutral-dark/60 mb-6 uppercase">Total THB (${hc})</div><div class="pt-4 border-t border-slate-700 dark:border-brand-neutral-dark/10"><div class="flex justify-between items-center mb-3"><h4 class="text-[10px] font-bold uppercase tracking-widest text-slate-300 dark:text-brand-neutral-dark/80">Itemized Breakdown</h4></div><div class="flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">${breakdownHtml || `<div class="text-xs text-slate-400 dark:text-brand-neutral-dark/60 italic pt-2">No tools selected yet</div>`}</div></div></div>`;
+        }
+
+        function renderChecklists() {
+            if(state.session.operationInput.trim() === '') return;
+            const renderList = (listName, containerId, countId, toggleBtnId) => {
+                const items = state.session[listName];
+                const displayedItems = state.showAll[listName] ? items : items.filter(i => i.checked || i.autoPopulated);
+                document.getElementById(countId).innerText = `${items.filter(i => i.checked).length} SELECTED`;
+                const toggleBtn = document.getElementById(toggleBtnId);
+                toggleBtn.innerHTML = state.showAll[listName] ? `Hide Full List <i data-lucide="chevron-up" class="w-3 h-3 sm:w-[14px] sm:h-[14px]"></i>` : `${listName === 'tools' ? 'Add Tools' : 'Show All Actions'} <i data-lucide="chevron-down" class="w-3 h-3 sm:w-[14px] sm:h-[14px]"></i>`;
+                let html = displayedItems.length === 0 && !state.showAll[listName] ? `<div class="py-4 text-center text-gray-400 dark:text-slate-500 text-[11px] sm:text-sm font-medium">None selected.</div>` : '';
+                displayedItems.forEach(item => {
+                    let optionsHtml = '';
+                    if (item.checked) {
+                        if (item.options) {
+                            optionsHtml += `<div class="flex flex-wrap gap-1.5 sm:gap-2 mt-1">`;
+                            item.options.forEach(opt => {
+                                if (state.session.diagnosis.includes("25G") && (item.id === 'micro-scissor' || item.id === 'ilm-forceps') && opt.value === NEW_REUSED_OPTIONS.REUSED) return;
+                                const isSel = item.selectedValue === opt.value;
+                                optionsHtml += `<button onclick="updateChecklistItem('${listName}', '${item.id}', 'selectedValue', '${opt.value}')" class="px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all border ${isSel ? 'bg-[#fcb7f0] text-slate-800 border-[#fcb7f0] shadow-sm' : 'bg-white dark:bg-[#151f32] text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-700 hover:border-[#fcb7f0]/50'}">${opt.label}</button>`;
+                            });
+                            optionsHtml += `</div>`;
+                        }
+                        if (Array.isArray(item.value)) {
+                            optionsHtml += `<div class="flex gap-1.5 sm:gap-2 mt-1">`;
+                            item.value.forEach((v, idx) => {
+                                optionsHtml += `<input type="number" value="${v}" onchange="updateArrayItemValue('${listName}', '${item.id}', ${idx}, this.value)" placeholder="${idx === 0 ? "Val 1" : "Val 2"}" class="w-20 sm:w-24 p-1.5 sm:p-2 bg-white dark:bg-[#101421] border border-gray-200 dark:border-slate-700 rounded-lg text-[10px] sm:text-xs font-bold outline-none text-gray-800 dark:text-slate-200" />`;
+                            });
+                            optionsHtml += `</div>`;
+                        }
+                    }
+                    html += `<div class="py-1.5 sm:py-2 transition-colors"><div class="flex items-start gap-2.5 sm:gap-3"><label class="relative flex items-center cursor-pointer mt-0 shrink-0"><input type="checkbox" ${item.checked ? 'checked' : ''} onchange="updateChecklistItem('${listName}', '${item.id}', 'checked', this.checked)" class="peer appearance-none w-4 h-4 sm:w-5 sm:h-5 rounded bg-gray-100 dark:bg-slate-700/50 border border-gray-300 dark:border-slate-600 checked:bg-[#fcb7f0] checked:border-[#fcb7f0] transition-all" /><i data-lucide="check" stroke-width="3" class="text-slate-800 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 peer-checked:opacity-100 transition-opacity w-3 h-3 sm:w-[14px] sm:h-[14px]"></i></label><div class="flex-1"><div class="flex flex-wrap items-center gap-2 sm:gap-4"><div class="flex flex-col"><span class="text-[11px] sm:text-[13px] font-bold leading-snug ${item.checked ? 'text-gray-900 dark:text-slate-200' : 'text-gray-500 dark:text-slate-400'}">${item.item}</span>${item.note ? `<span class="text-[9px] sm:text-[11px] text-gray-400 dark:text-slate-500 font-medium mt-0.5">${item.note}</span>` : ''}</div>${item.checked ? `<div class="animate-fadeIn shrink-0">${optionsHtml}</div>` : ''}</div></div></div></div>`;
+                });
+                document.getElementById(containerId).innerHTML = html;
+            };
+            renderList('actions', 'actions-list', 'actions-count', 'actions-toggle-btn');
+            renderList('tools', 'tools-list', 'tools-count', 'tools-toggle-btn');
+        }
+
+        function render() { renderCaseBasics(); renderProcedures(); renderCostCard(); renderChecklists(); lucide.createIcons(); }
+
+        window.onload = () => { render(); lucide.createIcons(); };
+    </script>
+</body>
+</html>
