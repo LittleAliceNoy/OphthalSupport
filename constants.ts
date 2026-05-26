@@ -143,6 +143,10 @@ export const BASE_TOOLS: ChecklistItemData[] = [
     id: 'punch-trephine',
     item: 'Punch & Trephine',
     type: 'number-input',
+    options: [
+      { label: NEW_REUSED_OPTIONS.NEW, value: NEW_REUSED_OPTIONS.NEW },
+      { label: NEW_REUSED_OPTIONS.REUSED, value: NEW_REUSED_OPTIONS.REUSED }
+    ],
     value: ['', ''],
     checked: false,
     note: 'Enter Punch No. and Trephine No.'
@@ -338,7 +342,7 @@ export const TOOL_PRICES: any = {
   'endolaser': { name: 'Endolaser', CSMBS: 2500, SSS: 2500, UCS: 2500 },
   'dk-line': { name: 'DK Line 5 ml (Sale ฿5,700)', CSMBS: 0, SSS: 0, UCS: 0 },
   'soft-tip': { name: 'Soft Tip', CSMBS: 514, SSS: 514, UCS: 514 },
-  'punch-trephine': { name: 'Punch & Trephine', CSMBS: 0, SSS: 0, UCS: 0 },
+  'punch-trephine': { name: 'Punch & Trephine', CSMBS: 12000, SSS: 12000, UCS: 12000 },
   '5fu': { name: '5FU', CSMBS: 0, SSS: 0, UCS: 0 },
   'fibrin-glue': { name: 'Fibrin glue', CSMBS: 0, SSS: 0, UCS: 0 },
 };
