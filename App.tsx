@@ -24,13 +24,8 @@ import {
 import {
     ANESTHESIA_TYPES,
     COVERAGE_TYPES,
-    BASE_ACTIONS,
-    BASE_TOOLS,
-    OPERATIONS_DATA,
     SURGEON_GROUPS,
     CENTURION_PREFERRED_SURGEONS,
-    RAW_IOL_PRICES_DATA,
-    TOOL_PRICES,
     MACHINE_TYPES,
     PPV_SIZES,
     MP_TYPES,
@@ -41,7 +36,9 @@ import {
     PatientSession,
     Option
 } from './constants';
+import { fetchConfig, DBTool, DBAction, DBOperation, DBRule, DBPrice } from './configService';
 
+// --- Utility Functions ---
 function normalizeText(text: string) {
     return text.toLowerCase().replace(/[^a-z0-9\u0E00-\u0E7F]/g, ' ');
 }
@@ -71,80 +68,34 @@ function getSurgeonGroupColorClass(group: string) {
     return 'bg-gray-500 dark:bg-slate-400 text-white dark:text-slate-900 border-gray-600 dark:border-slate-500 shadow-sm';
 }
 
-function flattenToolPrices(toolPrices: any) {
-    const items: any[] = [];
-    Object.keys(toolPrices).forEach(key => {
-        const value = toolPrices[key];
-        if (value.name && (typeof value.CSMBS === 'number' || typeof value.SSS === 'number' || typeof value.UCS === 'number')) {
-            items.push({ 
-                id: key, 
-                name: value.name, 
-                csmbs: value.CSMBS ?? 0, 
-                sss: value.SSS ?? 0,
-                sale: value.CSMBS ?? 0 
-            });
-        } 
-        else if (typeof value === 'object' && value !== null) {
-            Object.keys(value).forEach(subKey => {
-                const subValue = value[subKey];
-                if (subValue && typeof subValue === 'object' && subValue.name) {
-                    items.push({ 
-                        id: subKey, 
-                        name: value.name, 
-                        csmbs: subValue.CSMBS ?? 0, 
-                        sss: subValue.SSS ?? 0,
-                        sale: subValue.CSMBS ?? 0
-                    });
-                }
-            });
-        }
-    });
-    return items.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-}
-
-function calculateCostAndBreakdown(tools: ChecklistItemData[], healthCoverage: string, session: PatientSession) {
+function calculateCostAndBreakdown(tools: ChecklistItemData[], healthCoverage: string, session: PatientSession, prices: DBPrice[]) {
     let total = 0;
-    const breakdown: { name: string, price: number, isReused: boolean }[] = [];
+    const breakdown: { name: string, price: number, isReused: boolean, id: string }[] = [];
     
     tools.forEach(tool => {
         if (tool.checked) {
-            const priceInfo = TOOL_PRICES[tool.id];
-            if (priceInfo) {
-                let price = 0;
-                let itemName = '';
-                let isReused = false;
-                
-                if (tool.selectedValue === NEW_REUSED_OPTIONS.REUSED) {
-                    isReused = true;
-                }
+            let price = 0;
+            let isReused = tool.selectedValue === NEW_REUSED_OPTIONS.REUSED;
+            const coverageKey = (healthCoverage.toLowerCase() + '_price') as keyof DBPrice;
 
-                if (tool.id === 'ppv-set' && tool.checked) {
-                    const tipSize = session.diagnosis.includes("25G") ? "25G" : "23G";
-                    const machine = tool.selectedValue; 
-                    if (machine) {
-                        const key = `${tipSize}_${machine}`;
-                        const subItem = priceInfo[key];
-                        if (subItem) {
-                            price = subItem[healthCoverage] || 0;
-                            itemName = subItem.name;
-                        }
-                    }
-                } else if (tool.selectedValue && priceInfo[tool.selectedValue] && !isReused) {
-                    const subItem = priceInfo[tool.selectedValue];
-                    if (subItem) {
-                        price = subItem[healthCoverage] || 0;
-                        itemName = subItem.name;
-                    }
-                } else {
-                    price = isReused ? 0 : (priceInfo[healthCoverage] || 0);
-                    itemName = priceInfo.name;
-                }
-
-                if (itemName) {
-                    total += price;
-                    breakdown.push({ id: tool.id, name: itemName, price, isReused });
-                }
+            if (tool.id === 'ppv-set') {
+                const tipSize = session.diagnosis.includes("25G") ? "25G" : "23G";
+                const machine = tool.selectedValue; 
+                const subKey = machine ? `${tipSize}_${machine}` : null;
+                const priceRow = prices.find(p => p.tool_id === tool.id && p.sub_key === subKey);
+                price = isReused ? 0 : Number(priceRow?.[coverageKey] || 0);
+            } else if (tool.type === 'radio' && tool.selectedValue && !isReused) {
+                // For tools like glaucoma-device that have sub-keys in prices
+                const priceRow = prices.find(p => p.tool_id === tool.id && p.sub_key === tool.selectedValue) || 
+                                 prices.find(p => p.tool_id === tool.id && p.sub_key === null);
+                price = Number(priceRow?.[coverageKey] || 0);
+            } else {
+                const priceRow = prices.find(p => p.tool_id === tool.id && p.sub_key === null);
+                price = isReused ? 0 : Number(priceRow?.[coverageKey] || 0);
             }
+
+            total += price;
+            breakdown.push({ id: tool.id, name: tool.item, price, isReused });
         }
     });
     return { total, breakdown };
@@ -195,135 +146,6 @@ const applyMpToolsLogic = (tools: ChecklistItemData[], mpTypes: string[], diagno
     return newTools;
 };
 
-const calculateAutoChecklist = (session: PatientSession) => {
-    const rawOpText = session.operationInput + ' ' + (session.diagnosis || '');
-    const normalizedOpText = normalizeText(rawOpText);
-    const newActions = JSON.parse(JSON.stringify(BASE_ACTIONS));
-    let newTools = JSON.parse(JSON.stringify(BASE_TOOLS));
-    let showMp = false;
-
-
-    if (session.anesthesiaType === ANESTHESIA_TYPES.LA) {
-        const isTxOrGdi = /\btx\b/.test(normalizedOpText) || normalizedOpText.includes('trabeculectomy') || /\bgdi\b/.test(normalizedOpText) || normalizedOpText.includes('drainage implant') || normalizedOpText.includes('xen');
-        const isOculoOrStrabismus = normalizedOpText.includes('oculoplastic') || normalizedOpText.includes('strabismus') || normalizedOpText.includes('squint') || normalizedOpText.includes('ptosis') || normalizedOpText.includes('frontalis') || normalizedOpText.includes('sling') || normalizedOpText.includes('lid') || normalizedOpText.includes('entropion') || normalizedOpText.includes('ectropion') || normalizedOpText.includes('blepharoplasty') || normalizedOpText.includes('edcr') || normalizedOpText.includes('dcr');
-        if (!isTxOrGdi && !isOculoOrStrabismus) {
-            const axl = newActions.find((a: any) => a.id === 'axl');
-            if (axl) {
-                axl.checked = true;
-                axl.autoPopulated = true;
-            }
-        }
-    }
-
-    OPERATIONS_DATA.forEach(op => {
-        const isMatch = op.keywords.some(k => {
-            const normalizedKeyword = normalizeText(k).trim();
-            if (normalizedKeyword.length <= 2) {
-                const regex = new RegExp(`\\b${normalizedKeyword}\\b`);
-                return regex.test(normalizedOpText);
-            }
-            return normalizedOpText.includes(normalizedKeyword);
-        });
-        if (isMatch) {
-            op.actions.forEach((a: any) => {
-                const item = newActions.find((i: any) => i.id === a.id);
-                if (item) {
-                    item.checked = true;
-                    item.autoPopulated = true;
-                    if (a.selectedValue) item.selectedValue = a.selectedValue;
-                }
-            });
-            op.tools.forEach((t: any) => {
-                const item = newTools.find((i: any) => i.id === t.id);
-                if (item) {
-                    item.checked = true;
-                    item.autoPopulated = true;
-                    if (t.selectedValue) item.selectedValue = t.selectedValue;
-                }
-            });
-            if (op.name === "MP") showMp = true;
-            if (op.category === "Lens Surgery" || op.category === "Retinal Surgery") {
-                const axl = newActions.find((a: any) => a.id === 'axl');
-                if (axl) {
-                    axl.checked = true;
-                    axl.autoPopulated = true;
-                }
-            }
-        }
-    });
-
-    let finalMpTypes: string[] = []; 
-    const addMpType = (t: string) => { if (!finalMpTypes.includes(t)) finalMpTypes.push(t); };
-    
-    // Check if MP is selected or triggered
-    const isMpActive = normalizedOpText.includes('mp') || normalizedOpText.includes('membrane peeling') || normalizedOpText.includes('ilm') || showMp;
-
-    if (isMpActive) {
-        // ... (existing diags checking logic)
-        const diags = (session.diagnosis || '').split(',').map(s => s.trim());
-        if (diags.includes('ERM')) addMpType('ERM');
-        if (diags.includes('MH')) addMpType('MH');
-        if (diags.includes('TRD')) addMpType('TRD');
-        if (diags.includes('RRD')) addMpType('RRD');
-
-        // ... (existing raw text logic)
-        if (normalizedOpText.includes('erm') || normalizedOpText.includes('epiretinal')) addMpType('ERM');
-        if (normalizedOpText.includes('mh') || normalizedOpText.includes('macular hole')) addMpType('MH');
-        if (normalizedOpText.includes('trd')) addMpType('TRD');
-        if (normalizedOpText.includes('rrd')) addMpType('RRD');
-        if (normalizedOpText.includes('ilm')) { addMpType('ERM'); }
-    }
-    
-    // Pass session.diagnosis here
-    newTools = applyMpToolsLogic(newTools, finalMpTypes, session.diagnosis);
-
-    if (normalizedOpText.includes('phaco') || normalizedOpText.includes('phacoemulsification')) {
-        const machineTool = newTools.find((t: any) => t.id === 'centurion-legion');
-        if (machineTool) {
-            machineTool.checked = true;
-            machineTool.autoPopulated = true;
-            const normalizedSurgeon = normalizeText(session.surgeonName);
-            const prefersCenturion = CENTURION_PREFERRED_SURGEONS.some(s => normalizedSurgeon.includes(normalizeText(s).trim()));
-            
-            if (normalizedOpText.includes('stellaris')) {
-                machineTool.selectedValue = MACHINE_TYPES.STELLARIS;
-            } else {
-                machineTool.selectedValue = prefersCenturion ? MACHINE_TYPES.CENTURION : MACHINE_TYPES.LEGION;
-            }
-        }
-    }
-    const gdiTool = newTools.find((t: any) => t.id === 'glaucoma-device');
-    if (gdiTool) {
-        const hasGdiKeyword = normalizedOpText.includes('ahmed') || 
-                             normalizedOpText.includes('xen') || 
-                             normalizedOpText.includes('express') || 
-                             normalizedOpText.includes('gfd') || 
-                             normalizedOpText.includes('preserflo') || 
-                             normalizedOpText.includes('aadi');
-        
-        if (hasGdiKeyword) {
-            gdiTool.checked = true;
-            gdiTool.autoPopulated = true;
-            
-            if (normalizedOpText.includes('ahmed')) gdiTool.selectedValue = 'ahmed-valve';
-            else if (normalizedOpText.includes('xen')) gdiTool.selectedValue = 'gdi-xen-room';
-            else if (normalizedOpText.includes('express gfd') || normalizedOpText.includes('gfd express') || normalizedOpText.includes('express')) gdiTool.selectedValue = 'gfd-express';
-            else if (normalizedOpText.includes('preserflo')) gdiTool.selectedValue = 'preserflo-shunt';
-            else if (normalizedOpText.includes('aadi')) gdiTool.selectedValue = 'aadi-shunt';
-        }
-    }
-
-    const ppvSet = newTools.find((t: any) => t.id === 'ppv-set');
-    if (ppvSet && ppvSet.checked) {
-        const softTip = newTools.find((t: any) => t.id === 'soft-tip');
-        if (softTip) {
-            softTip.checked = true;
-            softTip.autoPopulated = true;
-        }
-    }
-    return { actions: newActions, tools: newTools, mpSelectedTypes: finalMpTypes };
-};
-
 const ChecklistSection = ({ title, items, onItemChange, colorClass, showAllText = "Show All", icon: Icon = ListChecks }: { title: string, items: ChecklistItemData[], onItemChange: (id: string, key: string, value: any) => void, colorClass: string, showAllText?: string, icon?: React.ElementType }) => {
     const [showAll, setShowAll] = useState(false);
     const displayedItems = showAll ? items : items.filter(i => i.checked || i.autoPopulated);
@@ -368,7 +190,7 @@ const ChecklistSection = ({ title, items, onItemChange, colorClass, showAllText 
                                             <div className="animate-fadeIn shrink-0">
                                                 {item.type === 'radio' && item.options && (
                                                     <div className="flex flex-wrap gap-1.5 sm:gap-2">
-                                                        {item.options.map(opt => (
+                                                        {item.options.map((opt: any) => (
                                                             <button 
                                                                 key={opt.value} 
                                                                 disabled={item.disabled}
@@ -422,6 +244,31 @@ const ChecklistSection = ({ title, items, onItemChange, colorClass, showAllText 
 
 export default function App() {
     const [isDarkMode, setIsDarkMode] = useState(false);
+    const [config, setConfig] = useState<{tools: DBTool[], actions: DBAction[], operations: DBOperation[], rules: DBRule[], prices: DBPrice[]} | null>(null);
+
+    useEffect(() => {
+        const load = async () => {
+            const data = await fetchConfig();
+            setConfig(data);
+            
+            // Initialize session after config loads
+            const initialActions: ChecklistItemData[] = data.actions.map(a => ({
+                id: a.id, item: a.item, type: 'checkbox', checked: false
+            }));
+            const initialTools: ChecklistItemData[] = data.tools.map(t => ({
+                id: t.id, item: t.item, type: t.type as any, options: t.options, checked: false, 
+                selectedValue: t.type === 'radio' ? t.default_value : null,
+                value: t.type === 'number-input' ? (Array.isArray(t.default_value) ? t.default_value : ['', '']) : ''
+            }));
+
+            setSession(prev => ({
+                ...prev,
+                actions: initialActions,
+                tools: initialTools
+            }));
+        };
+        load();
+    }, []);
 
     useEffect(() => {
         if (isDarkMode) {
@@ -436,13 +283,14 @@ export default function App() {
     const allSurgeonNames = useMemo(() => Object.values(SURGEON_GROUPS).flat().sort(), []);
     
     const groupedOperations = useMemo(() => {
-        const groups: Record<string, typeof OPERATIONS_DATA> = {};
-        OPERATIONS_DATA.forEach(op => {
+        if (!config) return {} as Record<string, DBOperation[]>;
+        const groups: Record<string, DBOperation[]> = {};
+        config.operations.forEach(op => {
             if (!groups[op.category]) groups[op.category] = [];
             groups[op.category].push(op);
         });
         return groups;
-    }, []);
+    }, [config]);
     
     const initialSession: PatientSession = {
         id: generateUUID(),
@@ -451,22 +299,130 @@ export default function App() {
         surgeonName: '',
         anesthesiaType: ANESTHESIA_TYPES.LA,
         healthCoverage: COVERAGE_TYPES.UCS,
-        actions: JSON.parse(JSON.stringify(BASE_ACTIONS)),
-        tools: JSON.parse(JSON.stringify(BASE_TOOLS)),
+        actions: [],
+        tools: [],
         mpSelectedTypes: [],
         updatedAt: new Date()
     };
 
     const [session, setSession] = useState<PatientSession>(initialSession);
 
+    // Logic implementation using config from Supabase
+    const calculateAutoChecklistDB = (currentSession: PatientSession) => {
+        if (!config) return { actions: currentSession.actions, tools: currentSession.tools, mpSelectedTypes: currentSession.mpSelectedTypes };
+
+        const rawOpText = currentSession.operationInput + ' ' + (currentSession.diagnosis || '');
+        const normalizedOpText = normalizeText(rawOpText);
+        
+        let newActions = JSON.parse(JSON.stringify(currentSession.actions)).map((a: any) => ({ ...a, checked: false, autoPopulated: false }));
+        let newTools = JSON.parse(JSON.stringify(currentSession.tools)).map((t: any) => ({ ...t, checked: false, autoPopulated: false }));
+        let showMp = false;
+
+        // LA Logic
+        if (currentSession.anesthesiaType === ANESTHESIA_TYPES.LA) {
+            const isTxOrGdi = /\btx\b/.test(normalizedOpText) || normalizedOpText.includes('trabeculectomy') || /\bgdi\b/.test(normalizedOpText) || normalizedOpText.includes('drainage implant') || normalizedOpText.includes('xen');
+            const isOculoOrStrabismus = normalizedOpText.includes('oculoplastic') || normalizedOpText.includes('strabismus') || normalizedOpText.includes('squint') || normalizedOpText.includes('ptosis') || normalizedOpText.includes('frontalis') || normalizedOpText.includes('sling') || normalizedOpText.includes('lid') || normalizedOpText.includes('entropion') || normalizedOpText.includes('ectropion') || normalizedOpText.includes('blepharoplasty') || normalizedOpText.includes('edcr') || normalizedOpText.includes('dcr');
+            if (!isTxOrGdi && !isOculoOrStrabismus) {
+                const axl = newActions.find((a: any) => a.id === 'axl');
+                if (axl) { axl.checked = true; axl.autoPopulated = true; }
+            }
+        }
+
+        // Apply Rules based on matched operations
+        config.operations.forEach(op => {
+            const isMatch = op.keywords.some(k => {
+                const normalizedKeyword = normalizeText(k).trim();
+                if (normalizedKeyword.length <= 2) {
+                    const regex = new RegExp(`\\b${normalizedKeyword}\\b`);
+                    return regex.test(normalizedOpText);
+                }
+                return normalizedOpText.includes(normalizedKeyword);
+            });
+
+            if (isMatch) {
+                const opRules = config.rules.filter(r => r.operation_id === op.id);
+                opRules.forEach(rule => {
+                    const list = rule.target_type === 'action' ? newActions : newTools;
+                    const item = list.find((i: any) => i.id === rule.target_id);
+                    if (item) {
+                        item.checked = true;
+                        item.autoPopulated = true;
+                        if (rule.default_selected_value) item.selectedValue = rule.default_selected_value;
+                    }
+                });
+
+                if (op.name === "MP") showMp = true;
+                if (op.category === "Lens Surgery" || op.category === "Retinal Surgery") {
+                    const axl = newActions.find((a: any) => a.id === 'axl');
+                    if (axl) { axl.checked = true; axl.autoPopulated = true; }
+                }
+            }
+        });
+
+        // MP Specific Logic
+        let finalMpTypes: string[] = []; 
+        const isMpActive = normalizedOpText.includes('mp') || normalizedOpText.includes('membrane peeling') || normalizedOpText.includes('ilm') || showMp;
+        if (isMpActive) {
+            const diags = (currentSession.diagnosis || '').split(',').map(s => s.trim());
+            const mpKeywords = ['ERM', 'MH', 'TRD', 'RRD'];
+            mpKeywords.forEach(k => { if (diags.includes(k) || normalizedOpText.includes(k.toLowerCase())) finalMpTypes.push(k); });
+            if (normalizedOpText.includes('epiretinal')) finalMpTypes.push('ERM');
+            if (normalizedOpText.includes('macular hole')) finalMpTypes.push('MH');
+            if (normalizedOpText.includes('ilm')) finalMpTypes.push('ERM');
+        }
+        newTools = applyMpToolsLogic(newTools, [...new Set(finalMpTypes)], currentSession.diagnosis);
+
+        // Phaco Machine Logic
+        if (normalizedOpText.includes('phaco')) {
+            const machineTool = newTools.find((t: any) => t.id === 'centurion-legion');
+            if (machineTool) {
+                machineTool.checked = true;
+                machineTool.autoPopulated = true;
+                const normalizedSurgeon = normalizeText(currentSession.surgeonName);
+                const prefersCenturion = CENTURION_PREFERRED_SURGEONS.some(s => normalizedSurgeon.includes(normalizeText(s).trim()));
+                if (normalizedOpText.includes('stellaris')) machineTool.selectedValue = MACHINE_TYPES.STELLARIS;
+                else machineTool.selectedValue = prefersCenturion ? MACHINE_TYPES.CENTURION : MACHINE_TYPES.LEGION;
+            }
+        }
+
+        // GDI Logic
+        const gdiTool = newTools.find((t: any) => t.id === 'glaucoma-device');
+        if (gdiTool) {
+            const gdiKeywords: Record<string, string[]> = {
+                'ahmed-valve': ['ahmed'],
+                'gdi-xen-room': ['xen'],
+                'gfd-express': ['express', 'gfd'],
+                'preserflo-shunt': ['preserflo'],
+                'aadi-shunt': ['aadi']
+            };
+            for (const [val, keywords] of Object.entries(gdiKeywords)) {
+                if (keywords.some(k => normalizedOpText.includes(k))) {
+                    gdiTool.checked = true;
+                    gdiTool.autoPopulated = true;
+                    gdiTool.selectedValue = val;
+                    break;
+                }
+            }
+        }
+
+        // PPV Soft Tip Logic
+        const ppvSet = newTools.find((t: any) => t.id === 'ppv-set');
+        if (ppvSet && ppvSet.checked) {
+            const softTip = newTools.find((t: any) => t.id === 'soft-tip');
+            if (softTip) { softTip.checked = true; softTip.autoPopulated = true; }
+        }
+
+        return { actions: newActions, tools: newTools, mpSelectedTypes: finalMpTypes };
+    };
+
     // Auto update checklist whenever relevant fields change
     useEffect(() => {
+        if (!config) return;
+
         // NEW: If any retinal procedure is selected, ensure PPV is also selected
         const normalizedInput = normalizeText(session.operationInput);
         const retinalKeywords = ['mp', 'membrane peeling', 'ilm', 'el', 'endolaser', 'so', 'soi', 'hd so', 'heavy so', 'pfcl'];
         const hasRetinalProc = retinalKeywords.some(k => normalizedInput.includes(k));
-        
-        // Use a more specific check for PPV to avoid accidental matches
         const hasPpvProc = /\bppv\b/i.test(normalizedInput) || normalizedInput.includes('vitrectomy');
 
         if (hasRetinalProc && !hasPpvProc) {
@@ -476,9 +432,9 @@ export default function App() {
             return;
         }
 
-        const result = calculateAutoChecklist(session);
+        const result = calculateAutoChecklistDB(session);
         setSession(prev => ({ ...prev, actions: result.actions, tools: result.tools, mpSelectedTypes: result.mpSelectedTypes }));
-    }, [session.operationInput, session.diagnosis, session.anesthesiaType, session.surgeonName]);
+    }, [session.operationInput, session.diagnosis, session.anesthesiaType, session.surgeonName, config]);
 
     const updateSession = (key: keyof PatientSession, value: any) => {
         setSession(prev => ({ ...prev, [key]: value, updatedAt: new Date() }));
@@ -499,7 +455,6 @@ export default function App() {
         const isSelected = regex.test(normalizedInput);
         
         if (isSelected) {
-            // Remove the keyword and handle surrounding '+' and spaces
             let newValue = normalizedInput.replace(regex, (match, p1, p2) => {
                 if (p1 === '+' && p2 === '+') return '+';
                 return '';
@@ -507,17 +462,14 @@ export default function App() {
             newValue = newValue.replace(/^\s*\+\s*|\s*\+\s*$/g, '');
             updateSession('operationInput', newValue);
 
-            // SPECIAL CLEANUP: If we deselect MP or GDI, clear their diagnostic subtypes
             if (keyword.toUpperCase() === 'MP') {
                 const currentDiags = session.diagnosis.split(',').map(s => s.trim()).filter(Boolean);
-                const mpSubtypes = ['MH', 'RRD', 'TRD', 'ERM'];
-                const filteredDiags = currentDiags.filter(d => !mpSubtypes.includes(d));
+                const filteredDiags = currentDiags.filter(d => !['MH', 'RRD', 'TRD', 'ERM'].includes(d));
                 updateSession('diagnosis', filteredDiags.join(', '));
             }
             if (keyword.toUpperCase() === 'GDI') {
                 const currentDiags = session.diagnosis.split(',').map(s => s.trim()).filter(Boolean);
-                const gdiSubtypes = ['Ahmed', 'XEN', 'Express GFD', 'Preserflo', 'AADI'];
-                const filteredDiags = currentDiags.filter(d => !gdiSubtypes.includes(d));
+                const filteredDiags = currentDiags.filter(d => !['Ahmed', 'XEN', 'Express GFD', 'Preserflo', 'AADI'].includes(d));
                 updateSession('diagnosis', filteredDiags.join(', '));
             }
         } else {
@@ -528,30 +480,21 @@ export default function App() {
 
     const toggleDiagnosisKeyword = (keyword: string, exclusiveGroup?: string[]) => {
         let currentVals = session.diagnosis.split(',').map(s => s.trim()).filter(Boolean);
-        
-        if (currentVals.includes(keyword)) {
-            // Deselect
-            currentVals = currentVals.filter(v => v !== keyword);
-        } else {
-            // Select: if part of an exclusive group, remove other members of the group
-            if (exclusiveGroup) {
-                currentVals = currentVals.filter(v => !exclusiveGroup.includes(v));
-            }
+        if (currentVals.includes(keyword)) currentVals = currentVals.filter(v => v !== keyword);
+        else {
+            if (exclusiveGroup) currentVals = currentVals.filter(v => !exclusiveGroup.includes(v));
             currentVals.push(keyword);
         }
-        
         updateSession('diagnosis', currentVals.join(', '));
     };
 
-    const { total, breakdown } = calculateCostAndBreakdown(session.tools, session.healthCoverage, session);
+    const { total, breakdown } = useMemo(() => {
+        if (!config) return { total: 0, breakdown: [] };
+        return calculateCostAndBreakdown(session.tools, session.healthCoverage, session, config.prices);
+    }, [session.tools, session.healthCoverage, session.diagnosis, config]);
 
     const activeSurgeonGroup = getSurgeonGroup(session.surgeonName);
-
     const isMissingRequired = session.operationInput.trim() === '';
-
-    const resetSession = () => {
-        setSession({...initialSession, id: generateUUID()});
-    };
 
     const resetCaseBasics = () => {
         setSession(prev => ({
@@ -562,31 +505,11 @@ export default function App() {
         }));
     };
 
-    const toggleAllToolsChoice = () => {
-        const reusables = session.tools.filter(t => t.checked && t.options?.some(o => o.value === NEW_REUSED_OPTIONS.NEW || o.value === NEW_REUSED_OPTIONS.REUSED));
-        const anyNew = reusables.some(t => t.selectedValue === NEW_REUSED_OPTIONS.NEW);
-        const targetValue = anyNew ? NEW_REUSED_OPTIONS.REUSED : NEW_REUSED_OPTIONS.NEW;
+    const isMpSelected = useMemo(() => session.operationInput.split('+').map(s => s.trim()).includes("MP"), [session.operationInput]);
+    const isGdiSelected = useMemo(() => session.operationInput.split('+').map(s => s.trim()).includes("GDI"), [session.operationInput]);
+    const isPpvSelected = useMemo(() => session.operationInput.split('+').map(s => s.trim()).includes("PPV"), [session.operationInput]);
 
-        const newTools = session.tools.map(t => {
-            if (t.checked && t.options?.some(o => o.value === NEW_REUSED_OPTIONS.NEW || o.value === NEW_REUSED_OPTIONS.REUSED)) {
-                return { ...t, selectedValue: targetValue };
-            }
-            return t;
-        });
-        updateSession('tools', newTools);
-    };
-
-    const isMpSelected = useMemo(() => {
-        return session.operationInput.split('+').map(s => s.trim()).includes("MP");
-    }, [session.operationInput]);
-
-    const isGdiSelected = useMemo(() => {
-        return session.operationInput.split('+').map(s => s.trim()).includes("GDI");
-    }, [session.operationInput]);
-
-    const isPpvSelected = useMemo(() => {
-        return session.operationInput.split('+').map(s => s.trim()).includes("PPV");
-    }, [session.operationInput]);
+    if (!config) return <div className="min-h-screen flex items-center justify-center dark:bg-brand-neutral-dark text-slate-500">Loading Configuration...</div>;
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-fuchsia-50 via-rose-50 to-cyan-50 dark:bg-brand-neutral-dark dark:bg-none text-gray-800 dark:text-gray-100 font-sans transition-colors duration-300">
@@ -616,10 +539,7 @@ export default function App() {
 
             <main className="max-w-3xl mx-auto px-3 py-3 sm:px-4 sm:py-6">
                 <div className="space-y-4 sm:space-y-6">
-                    
-                    {/* Main Content */}
                     <div className="space-y-4 sm:space-y-6">
-                        {/* Section 1: Core Info */}
                         <section className="bg-white dark:bg-[#151f32] rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 p-3 sm:p-4 transition-colors duration-300">
                             <div className="flex justify-between items-center mb-2 sm:mb-3 border-b border-gray-50 dark:border-slate-800 pb-1.5 sm:pb-2">
                                 <div className="flex items-center gap-2">
@@ -681,7 +601,6 @@ export default function App() {
                             </div>
                         </section>
 
-                        {/* Section 2: Procedure & Diagnosis Taps */}
                         <section className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-5 transition-colors duration-300">
                             <div className="flex items-center justify-between mb-3 sm:mb-4 border-b border-gray-50 dark:border-slate-800 pb-2 sm:pb-3">
                                 <div className="flex items-center gap-2">
@@ -698,15 +617,12 @@ export default function App() {
                             </div>
 
                             <div className="space-y-3 sm:space-y-5">
-                                {/* Procedures */}
                                 <div>
                                     {Object.entries(groupedOperations).map(([category, ops]) => {
                                         const renderOpBtn = (op: any) => {
                                             const normalizedInput = session.operationInput.toLowerCase();
                                             const normalizedOpName = op.name.toLowerCase();
-                                            // Escape special characters for regex
                                             const escapedName = normalizedOpName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                                            // Check if the name exists as a segment between '+' signs or at start/end
                                             const regex = new RegExp('(^|\\+)\\s*' + escapedName + '\\s*($|\\+)', 'i');
                                             const isSelected = regex.test(normalizedInput);
                                             return (
@@ -728,77 +644,57 @@ export default function App() {
                                         return (
                                         <div key={category} className="mb-3 sm:mb-4 last:mb-0">
                                             <label className="text-[10px] sm:text-xs font-bold text-gray-500 dark:text-slate-400 block mb-1.5 sm:mb-2">{category}</label>
-                                            
-                                            {category === 'Lens Surgery' ? (
-                                                <div className="space-y-2">
-                                                    <div className="flex flex-wrap gap-1.5 sm:gap-2 items-center">
-                                                        {ops.filter(op => ['Phaco', 'IOL', 'ECCE', 'SF-IOL'].includes(op.name)).map(renderOpBtn)}
+                                            <div className="flex flex-wrap gap-1.5 sm:gap-2 items-center">
+                                                {(ops as any[]).map(renderOpBtn)}
+                                                {category === 'Retinal Surgery' && (isPpvSelected || isMpSelected) && (
+                                                    <div className="flex flex-wrap gap-x-4 gap-y-2 items-center">
+                                                        {isPpvSelected && (
+                                                            <div className="flex items-center gap-1.5 animate-fadeIn shrink-0">
+                                                                <div className="w-2 h-[2px] bg-pink-400/40 rounded-full"></div>
+                                                                {PPV_TYPES.map(p => {
+                                                                    const diags = session.diagnosis.split(',').map(s => s.trim()).filter(Boolean);
+                                                                    const isPpvSelectedDiag = diags.includes(p);
+                                                                    return (
+                                                                        <button
+                                                                            key={p}
+                                                                            onClick={() => toggleDiagnosisKeyword(p, PPV_TYPES)}
+                                                                            className={`px-2 py-1 rounded text-[10px] font-bold transition-all border ${
+                                                                                isPpvSelectedDiag 
+                                                                                ? 'bg-pink-500 dark:bg-pink-400 text-white dark:text-slate-900 border-pink-600 dark:border-pink-500 shadow-sm' 
+                                                                                : 'bg-pink-50 dark:bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-200 dark:border-pink-500/30 hover:bg-pink-100 dark:hover:bg-pink-500/20'
+                                                                            }`}
+                                                                        >
+                                                                            {p}
+                                                                        </button>
+                                                                    )
+                                                                })}
+                                                            </div>
+                                                        )}
+                                                        {isMpSelected && (
+                                                            <div className="flex items-center gap-1.5 animate-fadeIn shrink-0">
+                                                                <div className="w-2 h-[2px] bg-brand-secondary/40 rounded-full"></div>
+                                                                {MP_TYPES.map(mp => {
+                                                                    const diags = session.diagnosis.split(',').map(s => s.trim()).filter(Boolean);
+                                                                    const isMpSelectedDiag = diags.includes(mp);
+                                                                    return (
+                                                                        <button
+                                                                            key={mp}
+                                                                            onClick={() => toggleDiagnosisKeyword(mp)}
+                                                                            className={`px-2 py-1 rounded text-[10px] font-bold transition-all border ${
+                                                                                isMpSelectedDiag 
+                                                                                ? 'bg-brand-secondary dark:bg-brand-secondary-dark text-white dark:text-brand-neutral-dark border-brand-secondary dark:border-brand-secondary-dark shadow-sm' 
+                                                                                : 'bg-brand-secondary/5 dark:bg-brand-secondary-dark/10 text-brand-secondary dark:text-brand-secondary-dark border-brand-secondary/30 dark:border-brand-secondary-dark/30 hover:bg-brand-secondary/20 dark:hover:bg-brand-secondary-dark/20'
+                                                                            }`}
+                                                                        >
+                                                                            {mp}
+                                                                        </button>
+                                                                    )
+                                                                })}
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                    <div className="flex flex-wrap gap-1.5 sm:gap-2 items-center">
-                                                        {ops.filter(op => !['Phaco', 'IOL', 'ECCE', 'SF-IOL'].includes(op.name)).map(renderOpBtn)}
-                                                    </div>
-                                                </div>
-                                            ) : category === 'Retinal Surgery' ? (
-                                                <div className="space-y-2">
-                                                    <div className="flex flex-wrap gap-1.5 sm:gap-2 items-center">
-                                                        {ops.map(renderOpBtn)}
-                                                    </div>
-                                                    
-                                                    {(isPpvSelected || isMpSelected) && (
-                                                        <div className="flex flex-wrap gap-x-4 gap-y-2 items-center">
-                                                            {isPpvSelected && (
-                                                                <div className="flex items-center gap-1.5 animate-fadeIn shrink-0">
-                                                                    <div className="w-2 h-[2px] bg-pink-400/40 rounded-full"></div>
-                                                                    {PPV_TYPES.map(p => {
-                                                                        const diags = session.diagnosis.split(',').map(s => s.trim()).filter(Boolean);
-                                                                        const isPpvSelectedDiag = diags.includes(p);
-                                                                        return (
-                                                                            <button
-                                                                                key={p}
-                                                                                onClick={() => toggleDiagnosisKeyword(p, PPV_TYPES)}
-                                                                                className={`px-2 py-1 rounded text-[10px] font-bold transition-all border ${
-                                                                                    isPpvSelectedDiag 
-                                                                                    ? 'bg-pink-500 dark:bg-pink-400 text-white dark:text-slate-900 border-pink-600 dark:border-pink-500 shadow-sm' 
-                                                                                    : 'bg-pink-50 dark:bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-200 dark:border-pink-500/30 hover:bg-pink-100 dark:hover:bg-pink-500/20'
-                                                                                }`}
-                                                                            >
-                                                                                {p}
-                                                                            </button>
-                                                                        )
-                                                                    })}
-                                                                </div>
-                                                            )}
-
-                                                            {isMpSelected && (
-                                                                <div className="flex items-center gap-1.5 animate-fadeIn shrink-0">
-                                                                    <div className="w-2 h-[2px] bg-brand-secondary/40 rounded-full"></div>
-                                                                    {MP_TYPES.map(mp => {
-                                                                        const diags = session.diagnosis.split(',').map(s => s.trim()).filter(Boolean);
-                                                                        const isMpSelectedDiag = diags.includes(mp);
-                                                                        return (
-                                                                            <button
-                                                                                key={mp}
-                                                                                onClick={() => toggleDiagnosisKeyword(mp)}
-                                                                                className={`px-2 py-1 rounded text-[10px] font-bold transition-all border ${
-                                                                                    isMpSelectedDiag 
-                                                                                    ? 'bg-brand-secondary dark:bg-brand-secondary-dark text-white dark:text-brand-neutral-dark border-brand-secondary dark:border-brand-secondary-dark shadow-sm' 
-                                                                                    : 'bg-brand-secondary/5 dark:bg-brand-secondary-dark/10 text-brand-secondary dark:text-brand-secondary-dark border-brand-secondary/30 dark:border-brand-secondary-dark/30 hover:bg-brand-secondary/20 dark:hover:bg-brand-secondary-dark/20'
-                                                                                }`}
-                                                                            >
-                                                                                {mp}
-                                                                            </button>
-                                                                        )
-                                                                    })}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="flex flex-wrap gap-1.5 sm:gap-2 items-center">
-                                                    {ops.map(renderOpBtn)}
-
-                                                    {category === 'Glaucoma' && isGdiSelected && (
+                                                )}
+                                                {category === 'Glaucoma' && isGdiSelected && (
                                                     <div className="flex items-center gap-1.5 ml-1 animate-fadeIn shrink-0">
                                                         <div className="w-2 h-[2px] bg-cyan-600/40 dark:bg-brand-tertiary-dark/40 rounded-full"></div>
                                                         {GDI_TYPES.map(gdi => {
@@ -821,7 +717,6 @@ export default function App() {
                                                     </div>
                                                 )}
                                             </div>
-                                            )}
                                         </div>
                                         );
                                     })}
@@ -839,125 +734,68 @@ export default function App() {
                                         </p>
                                     )}
                                 </div>
-
-
                             </div>
                         </section>
 
-                        {/* Section 3: Cost Card */}
                         {!isMissingRequired && (
                             <div className="bg-brand-neutral-dark dark:bg-gradient-to-r dark:from-[#FCAAED] dark:to-[#F1B197] rounded-2xl shadow-xl dark:shadow-[0_0_40px_rgba(252,170,237,0.2)] p-6 text-white dark:text-brand-neutral-dark overflow-hidden relative animate-fadeIn transition-colors duration-300">
                                 <Calculator className="absolute -right-4 -top-4 w-24 h-24 opacity-10 dark:opacity-20" />
-                                
                                 <h3 className="text-xs font-headline font-black uppercase tracking-widest text-slate-300 dark:text-slate-900/60 mb-2">Estimated Tooling Cost</h3>
                                 <div className="text-4xl font-headline font-black mb-1 leading-none text-[#fcb7f0] dark:text-slate-900">{total.toLocaleString()}</div>
                                 <div className="text-xs font-bold text-slate-400 dark:text-slate-900/60 mb-6 uppercase">Total THB ({session.healthCoverage})</div>
-
                                 <div className="pt-4 border-t border-slate-700 dark:border-slate-900/10">
-                                    <div className="flex justify-between items-center mb-3">
-                                        <h4 className="text-[10px] font-bold uppercase tracking-widest text-slate-300 dark:text-slate-900/80">Itemized Breakdown</h4>
-                                    </div>
+                                    <h4 className="text-[10px] font-bold uppercase tracking-widest text-slate-300 dark:text-slate-900/80 mb-3">Itemized Breakdown</h4>
                                     <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                                         {breakdown.length > 0 ? (
                                             breakdown.map((item, i) => {
                                                 const tool = session.tools.find(t => t.id === item.id);
-                                                const isReusable = tool?.options?.some(o => o.value === NEW_REUSED_OPTIONS.NEW || o.value === NEW_REUSED_OPTIONS.REUSED);
-                                                
+                                                const isReusable = tool?.options?.some((o: any) => o.value === NEW_REUSED_OPTIONS.NEW || o.value === NEW_REUSED_OPTIONS.REUSED);
                                                 return (
                                                     <div key={i} className="flex justify-between items-start text-sm group">
                                                         <div className="flex flex-col flex-1 mr-3">
                                                             <div className="flex items-center gap-2 flex-wrap">
-                                                                <span className="font-semibold text-white dark:text-slate-900 truncate">
-                                                                    {item.name}
-                                                                </span>
+                                                                <span className="font-semibold text-white dark:text-slate-900 truncate">{item.name}</span>
                                                                 {isReusable && (
                                                                     <div className="flex items-center gap-1.5 shrink-0">
                                                                         {tool?.disabled ? (
-                                                                            <span className="inline-flex items-center justify-center h-[20px] w-[60px] rounded-full text-[7px] font-black bg-brand-secondary dark:bg-slate-200 text-white dark:text-slate-900 leading-none uppercase shrink-0">
-                                                                                New Only
-                                                                            </span>
+                                                                            <span className="inline-flex items-center justify-center h-[20px] w-[60px] rounded-full text-[7px] font-black bg-brand-secondary dark:bg-slate-200 text-white dark:text-slate-900 leading-none uppercase shrink-0">New Only</span>
                                                                         ) : (
                                                                             <button 
                                                                                 onClick={() => updateChecklist('tools', item.id, 'selectedValue', item.isReused ? NEW_REUSED_OPTIONS.NEW : NEW_REUSED_OPTIONS.REUSED)}
-                                                                                className={`relative inline-flex h-[20px] w-[60px] items-center rounded-full transition-all focus:outline-none ${
-                                                                                    !item.isReused 
-                                                                                        ? 'bg-brand-secondary dark:bg-slate-200' 
-                                                                                        : 'bg-white/30 dark:bg-slate-800/50'
-                                                                                }`}
-                                                                                aria-label="Toggle New/Reuse"
+                                                                                className={`relative inline-flex h-[20px] w-[60px] items-center rounded-full transition-all focus:outline-none ${!item.isReused ? 'bg-brand-secondary dark:bg-slate-200' : 'bg-white/30 dark:bg-slate-800/50'}`}
                                                                             >
-                                                                                <span className={`absolute text-[8px] font-black uppercase tracking-wider transition-all ${
-                                                                                    !item.isReused 
-                                                                                    ? 'right-2.5 text-white dark:text-slate-900' 
-                                                                                    : 'left-2.5 text-slate-900 dark:text-white'
-                                                                                }`}>
-                                                                                    {item.isReused ? 'Reuse' : 'New'}
-                                                                                </span>
-                                                                                <span
-                                                                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-all shadow-sm ${
-                                                                                        !item.isReused ? 'translate-x-1' : 'translate-x-[40px]'
-                                                                                    }`}
-                                                                                />
+                                                                                <span className={`absolute text-[8px] font-black uppercase tracking-wider transition-all ${!item.isReused ? 'right-2.5 text-white dark:text-slate-900' : 'left-2.5 text-slate-900 dark:text-white'}`}>{item.isReused ? 'Reuse' : 'New'}</span>
+                                                                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-all shadow-sm ${!item.isReused ? 'translate-x-1' : 'translate-x-[40px]'}`} />
                                                                             </button>
                                                                         )}
                                                                     </div>
                                                                 )}
                                                             </div>
                                                         </div>
-                                                        <span className="font-mono text-[#fcb7f0] dark:text-slate-900 tracking-tight shrink-0 mt-0.5 font-bold">
-                                                            {item.isReused ? '฿0' : `฿${item.price.toLocaleString()}`}
-                                                        </span>
+                                                        <span className="font-mono text-[#fcb7f0] dark:text-slate-900 tracking-tight shrink-0 mt-0.5 font-bold">{item.isReused ? '฿0' : `฿${item.price.toLocaleString()}`}</span>
                                                     </div>
                                                 );
                                             })
-                                        ) : (
-                                            <div className="text-xs text-slate-400 dark:text-slate-800 italic pt-2 font-medium">No tools selected yet</div>
-                                        )}
+                                        ) : <div className="text-xs text-slate-400 dark:text-slate-800 italic pt-2 font-medium">No tools selected yet</div>}
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* Section 4: Generated Checklists */}
                         {!isMissingRequired && (
                             <section className="space-y-4 animate-fadeIn mb-8">
-                                <ChecklistSection 
-                                    title="Pre-Operative Checklist" 
-                                    items={session.actions} 
-                                    onItemChange={(id, k, v) => updateChecklist('actions', id, k, v)} 
-                                    colorClass="text-slate-100"
-                                    showAllText="Show All Actions"
-                                />
-                                <ChecklistSection 
-                                    title="Surgical Tools Checklist" 
-                                    items={session.tools} 
-                                    onItemChange={(id, k, v) => updateChecklist('tools', id, k, v)} 
-                                    colorClass="text-slate-100"
-                                    showAllText="Add Tools"
-                                    icon={Syringe}
-                                />
+                                <ChecklistSection title="Pre-Operative Checklist" items={session.actions} onItemChange={(id, k, v) => updateChecklist('actions', id, k, v)} colorClass="text-slate-100" showAllText="Show All Actions" />
+                                <ChecklistSection title="Surgical Tools Checklist" items={session.tools} onItemChange={(id, k, v) => updateChecklist('tools', id, k, v)} colorClass="text-slate-100" showAllText="Add Tools" icon={Syringe} />
                             </section>
                         )}
-                        
-
                     </div>
                 </div>
             </main>
             <style>{`
-                .custom-scrollbar::-webkit-scrollbar {
-                    width: 4px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-track {
-                    background: rgba(255, 255, 255, 0.1);
-                    border-radius: 4px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb {
-                    background: rgba(255, 255, 255, 0.3);
-                    border-radius: 4px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-                    background: rgba(255, 255, 255, 0.5);
-                }
+                .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+                .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.1); border-radius: 4px; }
+                .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.3); border-radius: 4px; }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.5); }
             `}</style>
         </div>
     );

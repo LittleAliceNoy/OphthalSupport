@@ -6,7 +6,7 @@ export const TOOL_PRICES: any = {
   'crescent-knife': { name: 'Crescent Bevel Up 2.3 mm', CSMBS: 325, SSS: 325, UCS: 325 },
   'centurion-legion': {
     [MACHINE_TYPES.CENTURION]: { name: 'Centurion Gravity Pack', CSMBS: 2140, SSS: 2140, UCS: 2140 },
-    [MACHINE_TYPES.LEGEON]: { name: 'Legion FMS Basic Pack', CSMBS: 0, SSS: 0, UCS: 0 },
+    [MACHINE_TYPES.LEGION]: { name: 'Legion FMS Basic Pack', CSMBS: 0, SSS: 0, UCS: 0 },
   },
   'zeiss-quattro': {
     'quattro-cassette': { name: 'Quattro Cassette / Zeiss', CSMBS: 1875, SSS: 1875, UCS: 1875 },
