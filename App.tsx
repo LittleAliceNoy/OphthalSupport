@@ -287,9 +287,24 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
             if (!groups[category]) groups[category] = [];
             
             const toolPrices = prices.filter(p => p.tool_id === tool.id);
-            toolPrices.forEach(price => {
-                groups[category].push({ tool, price });
-            });
+            
+            if (tool.id === 'ppv-set') {
+                // Group by machine name (Constellation, Stellaris)
+                const machineGroups: Record<string, DBPrice> = {};
+                toolPrices.forEach(price => {
+                    const machineName = price.sub_key?.split('_')[1] || price.sub_key || 'Unknown';
+                    if (!machineGroups[machineName]) {
+                        machineGroups[machineName] = price;
+                    }
+                });
+                Object.values(machineGroups).forEach(price => {
+                    groups[category].push({ tool, price });
+                });
+            } else {
+                toolPrices.forEach(price => {
+                    groups[category].push({ tool, price });
+                });
+            }
         });
 
         return groups;
@@ -331,7 +346,16 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
                                                     {(() => {
                                                         const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 
+                                                        if (tool.id === 'ctr-no') {
+                                                            return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">Capsular Tension Ring</span>;
+                                                        }
+                                                        if (tool.id === 'cts') {
+                                                            return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">Capsular Tension Segment</span>;
+                                                        }
                                                         if (tool.id === 'glaucoma-device' && price.sub_key) {
+                                                            if (price.sub_key === 'gdi-xen-room') return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">XEN glaucoma gel implant</span>;
+                                                            if (price.sub_key === 'aadi-shunt') return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">AADI shunt</span>;
+                                                            if (price.sub_key === 'gfd-express') return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">Express GFD</span>;
                                                             return (
                                                                 <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">
                                                                     {capitalize(price.sub_key.replace(/-/g, ' '))}
@@ -347,17 +371,16 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
                                                         }
                                                         if (tool.id === 'ppv-set' && price.sub_key) {
                                                             const parts = price.sub_key.split('_');
-                                                            const gauge = parts.length > 1 ? parts[0] : '';
                                                             const machine = parts.length > 1 ? parts[1] : parts[0];
                                                             return (
                                                                 <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">
-                                                                    {gauge ? gauge + ' ' : ''}{capitalize(machine)}
+                                                                    23G/25G {capitalize(machine)}
                                                                 </span>
                                                             );
                                                         }
                                                         if (tool.id === 'soft-tip') {
                                                             return (
-                                                                <span className="font-bold text-gray-900 dark:text-slate-200">23G/25G Soft tip</span>
+                                                                <span className="font-bold text-gray-900 dark:text-slate-200">Soft tip</span>
                                                             );
                                                         }
                                                         return (
