@@ -19,7 +19,25 @@ import {
     ListChecks,
     Check,
     Syringe,
-    Tag
+    Tag,
+    Edit3,
+    Save,
+    X,
+    ShieldCheck,
+    AlertCircle,
+    Layers,
+    Box,
+    History,
+    Cloud,
+    ExternalLink,
+    Database,
+    Filter,
+    ChevronRight,
+    Search,
+    Scissors,
+    Zap,
+    Wind,
+    Stethoscope
 } from 'lucide-react';
 
 import {
@@ -37,7 +55,35 @@ import {
     PatientSession,
     Option
 } from './constants';
-import { fetchConfig, DBTool, DBAction, DBOperation, DBRule, DBPrice } from './configService';
+import { fetchConfig, DBTool, DBAction, DBOperation, DBRule, DBPrice, updateTool, createTool, deleteTool, upsertPrice } from './configService';
+
+// --- Constants ---
+const TOOL_CATEGORIES_LIST = ['Lens Surgery', 'Retinal Surgery', 'Glaucoma', 'Cornea', 'General & Knives', 'Others'];
+
+const TOOL_CATEGORIES: Record<string, string> = {
+    '15-degree-blade': 'General & Knives',
+    'slit-knife': 'General & Knives',
+    'crescent-knife': 'General & Knives',
+    'centurion-legion': 'Lens Surgery',
+    'zeiss-quattro': 'Lens Surgery',
+    'basic-phaco-pack': 'Lens Surgery',
+    'ctr-no': 'Lens Surgery',
+    'cts': 'Lens Surgery',
+    'iris-retractor': 'Lens Surgery',
+    'ppv-set': 'Retinal Surgery',
+    'bbg': 'Retinal Surgery',
+    'ilm-forceps': 'Retinal Surgery',
+    'micro-scissor': 'Retinal Surgery',
+    'silicone-oil': 'Retinal Surgery',
+    'silicone-oil-hd': 'Retinal Surgery',
+    'endolaser': 'Retinal Surgery',
+    'dk-line': 'Retinal Surgery',
+    'soft-tip': 'Retinal Surgery',
+    'glaucoma-device': 'Glaucoma',
+    'punch-trephine': 'Cornea',
+    '5fu': 'Others',
+    'fibrin-glue': 'Others',
+};
 
 // --- Utility Functions ---
 function normalizeText(text: string) {
@@ -86,7 +132,6 @@ function calculateCostAndBreakdown(tools: ChecklistItemData[], healthCoverage: s
                 const priceRow = prices.find(p => p.tool_id === tool.id && p.sub_key === subKey);
                 price = isReused ? 0 : Number(priceRow?.[coverageKey] || 0);
             } else if (tool.type === 'radio' && tool.selectedValue && !isReused) {
-                // For tools like glaucoma-device that have sub-keys in prices
                 const priceRow = prices.find(p => p.tool_id === tool.id && p.sub_key === tool.selectedValue) || 
                                  prices.find(p => p.tool_id === tool.id && p.sub_key === null);
                 price = Number(priceRow?.[coverageKey] || 0);
@@ -156,6 +201,8 @@ const applyMpToolsLogic = (tools: ChecklistItemData[], mpTypes: string[], diagno
     
     return newTools;
 };
+
+// --- Components ---
 
 const ChecklistSection = ({ title, items, onItemChange, colorClass, showAllText = "Show All", icon: Icon = ListChecks }: { title: string, items: ChecklistItemData[], onItemChange: (id: string, key: string, value: any) => void, colorClass: string, showAllText?: string, icon?: React.ElementType }) => {
     const [showAll, setShowAll] = useState(false);
@@ -253,34 +300,41 @@ const ChecklistSection = ({ title, items, onItemChange, colorClass, showAllText 
     );
 };
 
-const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }) => {
-    const TOOL_CATEGORIES: Record<string, string> = {
-        '15-degree-blade': 'General & Knives',
-        'slit-knife': 'General & Knives',
-        'crescent-knife': 'General & Knives',
-        'centurion-legion': 'Lens Surgery',
-        'zeiss-quattro': 'Lens Surgery',
-        'basic-phaco-pack': 'Lens Surgery',
-        'ctr-no': 'Lens Surgery',
-        'cts': 'Lens Surgery',
-        'iris-retractor': 'Lens Surgery',
-        'ppv-set': 'Retinal Surgery',
-        'bbg': 'Retinal Surgery',
-        'ilm-forceps': 'Retinal Surgery',
-        'micro-scissor': 'Retinal Surgery',
-        'silicone-oil': 'Retinal Surgery',
-        'silicone-oil-hd': 'Retinal Surgery',
-        'endolaser': 'Retinal Surgery',
-        'dk-line': 'Retinal Surgery',
-        'soft-tip': 'Retinal Surgery',
-        'glaucoma-device': 'Glaucoma',
-        'punch-trephine': 'Cornea',
-        '5fu': 'Others',
-        'fibrin-glue': 'Others',
+const ToolIcon = ({ id, className = "w-5 h-5" }: { id: string, className?: string }) => {
+    if (id.includes('knife') || id.includes('blade')) return <Scissors className={className} />;
+    if (id.includes('centurion') || id.includes('phaco')) return <Zap className={className} />;
+    if (id.includes('glaucoma')) return <Stethoscope className={className} />;
+    if (id.includes('forceps') || id.includes('scissor')) return <Scissors className={className} />;
+    if (id.includes('ppv') || id.includes('retinal')) return <Wind className={className} />;
+    return <Box className={className} />;
+};
+
+const PriceListPage = ({ tools, prices, onAdminClick }: { tools: DBTool[], prices: DBPrice[], onAdminClick?: () => void }) => {
+    const [selectedCategory, setSelectedCategory] = useState<string>('All');
+    const [searchTerm, setSearchTerm] = useState('');
+    
+    const getDisplayName = (tool: DBTool, price: DBPrice) => {
+        const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+        if (tool.id === 'ctr-no') return 'Capsular Tension Ring';
+        if (tool.id === 'cts') return 'Capsular Tension Segment';
+        if (tool.id === 'glaucoma-device' && price.sub_key) {
+            if (price.sub_key === 'gdi-xen-room') return 'XEN glaucoma gel implant';
+            if (price.sub_key === 'aadi-shunt') return 'AADI shunt';
+            if (price.sub_key === 'gfd-express') return 'Express GFD';
+            return capitalize(price.sub_key.replace(/-/g, ' '));
+        }
+        if (tool.id === 'centurion-legion' && price.sub_key) return `${capitalize(price.sub_key)} phaco machine`;
+        if (tool.id === 'ppv-set' && price.sub_key) {
+            const parts = price.sub_key.split('_');
+            return `23G/25G ${capitalize(parts.length > 1 ? parts[1] : parts[0])}`;
+        }
+        if (tool.id === 'soft-tip') return 'Soft tip';
+        return tool.item;
     };
 
     const categorizedTools = useMemo(() => {
         const groups: Record<string, { tool: DBTool, price: DBPrice }[]> = {};
+        const lowerSearch = searchTerm.toLowerCase();
         
         tools.forEach(tool => {
             const category = TOOL_CATEGORIES[tool.id] || 'Others';
@@ -289,7 +343,6 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
             const toolPrices = prices.filter(p => p.tool_id === tool.id);
             
             if (tool.id === 'ppv-set') {
-                // Group by machine name (Constellation, Stellaris)
                 const machineGroups: Record<string, DBPrice> = {};
                 toolPrices.forEach(price => {
                     const machineName = price.sub_key?.split('_')[1] || price.sub_key || 'Unknown';
@@ -298,117 +351,427 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
                     }
                 });
                 Object.values(machineGroups).forEach(price => {
-                    groups[category].push({ tool, price });
+                    const displayName = getDisplayName(tool, price);
+                    if (!searchTerm || displayName.toLowerCase().includes(lowerSearch) || category.toLowerCase().includes(lowerSearch)) {
+                        groups[category].push({ tool, price });
+                    }
                 });
             } else {
                 toolPrices.forEach(price => {
-                    groups[category].push({ tool, price });
+                    const displayName = getDisplayName(tool, price);
+                    if (!searchTerm || displayName.toLowerCase().includes(lowerSearch) || category.toLowerCase().includes(lowerSearch)) {
+                        groups[category].push({ tool, price });
+                    }
                 });
             }
         });
 
-        return groups;
-    }, [tools, prices]);
+        // Sort each category's items alphabetically by their display name
+        Object.keys(groups).forEach(category => {
+            groups[category].sort((a, b) => {
+                const nameA = getDisplayName(a.tool, a.price).toLowerCase();
+                const nameB = getDisplayName(b.tool, b.price).toLowerCase();
+                return nameA.localeCompare(nameB);
+            });
+        });
 
-    const categories = ['Lens Surgery', 'Retinal Surgery', 'Glaucoma', 'Cornea', 'General & Knives', 'Others'];
+        return groups;
+    }, [tools, prices, searchTerm]);
+
+    const categories = ['All', ...TOOL_CATEGORIES_LIST];
+    const categoriesToRender = selectedCategory === 'All' ? TOOL_CATEGORIES_LIST : [selectedCategory];
 
     return (
-        <section className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-5 transition-colors duration-300">
-            <div className="flex items-center gap-2 mb-6 border-b border-gray-50 dark:border-slate-800 pb-3">
-                <Tag size={18} className="text-[#8e5a7d] dark:text-brand-primary-dark" strokeWidth={2.5} />
-                <h2 className="text-sm font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide">Tools & Prices</h2>
+        <div className="space-y-8 animate-fadeIn max-w-3xl mx-auto">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-end gap-4">
+                <div className="flex gap-2">
+                    <div className="relative group">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-pink-500 transition-colors" />
+                        <input 
+                            type="text" 
+                            placeholder="Search tools..." 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="pl-9 pr-4 py-2 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-pink-500/20 outline-none border border-gray-100 dark:border-slate-700 focus:border-pink-500/30 w-40 sm:w-64 transition-all shadow-sm"
+                        />
+                    </div>
+                    <button onClick={onAdminClick} className="flex items-center gap-2 px-4 py-2 bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400 rounded-xl text-xs font-bold hover:bg-pink-200 dark:hover:bg-pink-900/50 transition-all border border-pink-200 dark:border-pink-900/50">
+                        <Plus size={14} strokeWidth={3} /> New Item
+                    </button>
+                </div>
             </div>
-            
-            <div className="space-y-8">
-                {categories.map(category => {
-                    const items = categorizedTools[category];
-                    if (!items || items.length === 0) return null;
+
+            <div className="flex flex-wrap gap-2">
+                {categories.map(cat => (
+                    <button 
+                        key={cat}
+                        onClick={() => setSelectedCategory(cat)}
+                        className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-wider transition-all border ${
+                            selectedCategory === cat 
+                            ? 'bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400 border-pink-200 dark:border-pink-900/50 shadow-sm scale-105' 
+                            : 'bg-gray-50 dark:bg-slate-900 text-gray-400 dark:text-slate-500 border-gray-200 dark:border-slate-800 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-600 dark:hover:text-slate-300'
+                        }`}
+                    >
+                        {cat}
+                    </button>
+                ))}
+            </div>
+
+            <div className="space-y-6">
+                {categoriesToRender.map(category => {
+                    const items = categorizedTools[category] || [];
+                    if (items.length === 0) return null;
 
                     return (
-                        <div key={category} className="space-y-3">
-                            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 px-2 flex items-center gap-2">
-                                <span className="w-1 h-3 bg-[#fcb7f0] rounded-full"></span>
+                        <div key={category} className="bg-white dark:bg-[#151f32] rounded-3xl p-6 border border-gray-100 dark:border-slate-800 shadow-sm overflow-hidden">
+                            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-pink-500 mb-6 flex items-center gap-2">
+                                <span className="w-1 h-3 bg-pink-500 rounded-full"></span>
                                 {category}
                             </h3>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left text-[11px] sm:text-xs">
-                                    <thead>
-                                        <tr className="text-gray-400 dark:text-slate-500 border-b border-gray-50 dark:border-slate-800/50">
-                                            <th className="py-2 px-2 font-bold uppercase tracking-wider w-1/2">Tool / Option</th>
-                                            <th className="py-2 px-2 font-bold uppercase tracking-wider text-right">CSMBS / SSS</th>
-                                            <th className="py-2 px-2 font-bold uppercase tracking-wider text-right">UCS</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-50 dark:divide-slate-800/30">
-                                        {items.map(({ tool, price }, idx) => (
-                                            <tr key={`${tool.id}-${price.sub_key || 'default'}-${idx}`} className="hover:bg-gray-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                                                <td className="py-2.5 px-2">
-                                                    {(() => {
-                                                        const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
-
-                                                        if (tool.id === 'ctr-no') {
-                                                            return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">Capsular Tension Ring</span>;
-                                                        }
-                                                        if (tool.id === 'cts') {
-                                                            return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">Capsular Tension Segment</span>;
-                                                        }
-                                                        if (tool.id === 'glaucoma-device' && price.sub_key) {
-                                                            if (price.sub_key === 'gdi-xen-room') return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">XEN glaucoma gel implant</span>;
-                                                            if (price.sub_key === 'aadi-shunt') return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">AADI shunt</span>;
-                                                            if (price.sub_key === 'gfd-express') return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">Express GFD</span>;
-                                                            return (
-                                                                <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">
-                                                                    {capitalize(price.sub_key.replace(/-/g, ' '))}
-                                                                </span>
-                                                            );
-                                                        }
-                                                        if (tool.id === 'centurion-legion' && price.sub_key) {
-                                                            return (
-                                                                <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">
-                                                                    {capitalize(price.sub_key)} phaco machine
-                                                                </span>
-                                                            );
-                                                        }
-                                                        if (tool.id === 'ppv-set' && price.sub_key) {
-                                                            const parts = price.sub_key.split('_');
-                                                            const machine = parts.length > 1 ? parts[1] : parts[0];
-                                                            return (
-                                                                <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">
-                                                                    23G/25G {capitalize(machine)}
-                                                                </span>
-                                                            );
-                                                        }
-                                                        if (tool.id === 'soft-tip') {
-                                                            return (
-                                                                <span className="font-bold text-gray-900 dark:text-slate-200">Soft tip</span>
-                                                            );
-                                                        }
-                                                        return (
-                                                            <>
-                                                                <span className="font-bold text-gray-900 dark:text-slate-200">{tool.item}</span>
-                                                                {price.sub_key && (
-                                                                    <span className="ml-2 text-[10px] text-gray-500 dark:text-slate-400 font-medium bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded uppercase">{price.sub_key}</span>
-                                                                )}
-                                                            </>
-                                                        );
-                                                    })()}
-                                                </td>
-                                                <td className="py-2.5 px-2 text-right font-mono font-bold text-gray-900 dark:text-slate-200 whitespace-nowrap">
-                                                    ฿{price.csmbs_price.toLocaleString()}
-                                                </td>
-                                                <td className="py-2.5 px-2 text-right font-mono font-bold text-gray-900 dark:text-slate-200 whitespace-nowrap">
-                                                    ฿{price.ucs_price.toLocaleString()}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                            <div className="divide-y divide-gray-50 dark:divide-slate-800/50 -mx-6 px-6">
+                                {items.map(({ tool, price }, idx) => {
+                                    const isReusable = tool.type === 'radio' || tool.id === 'ppv-set' || tool.id === 'centurion-legion';
+                                    return (
+                                        <div key={`${tool.id}-${price.sub_key}-${idx}`} className="py-6 first:pt-0 last:pb-0 transition-all group">
+                                            <div className="flex items-start gap-4">
+                                                <div className="p-3 bg-gray-50 dark:bg-slate-900 rounded-2xl text-gray-400 dark:text-slate-500 group-hover:text-pink-500 transition-colors">
+                                                    <ToolIcon id={tool.id} />
+                                                </div>
+                                                <div className="flex-1 space-y-1">
+                                                    <div className="flex items-start justify-between">
+                                                        <h3 className="text-sm font-bold text-gray-900 dark:text-white leading-tight">
+                                                            {getDisplayName(tool, price)}
+                                                        </h3>
+                                                        <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter ${isReusable ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400'}`}>
+                                                            {isReusable ? 'Reusable' : 'Single-use'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="pt-4 grid grid-cols-3 gap-2">
+                                                        <div className="space-y-1">
+                                                            <span className="text-[8px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-widest">UCS / UC</span>
+                                                            <div className="text-xs font-mono font-bold text-gray-900 dark:text-slate-200">฿{price.ucs_price.toLocaleString()}</div>
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <span className="text-[8px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-widest">SSS</span>
+                                                            <div className="text-xs font-mono font-bold text-gray-900 dark:text-slate-200">฿{price.sss_price.toLocaleString()}</div>
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <span className="text-[8px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-widest">CSMBS</span>
+                                                            <div className="text-xs font-mono font-bold text-gray-900 dark:text-slate-200">฿{price.csmbs_price.toLocaleString()}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
                     );
                 })}
             </div>
-        </section>
+        </div>
+    );
+};
+
+const AdminPage = ({ tools, prices, operations, rules, onRefresh, actions }: { tools: DBTool[], prices: DBPrice[], operations: DBOperation[], rules: DBRule[], actions: DBAction[], onRefresh: () => void }) => {
+    const [editingPrice, setEditingPrice] = useState<{tool_id: string, sub_key: string | null} | null>(null);
+    const [priceForm, setPricePriceForm] = useState<DBPrice | null>(null);
+    const [editingTool, setEditingTool] = useState<string | null>(null);
+    const [toolForm, setToolForm] = useState<Partial<DBTool> | null>(null);
+    const [isAddingTool, setIsAddingTool] = useState(false);
+    const [newToolForm, setNewToolForm] = useState({ item: '', category: 'Others' });
+    const [isSaving, setIsSaving] = useState(false);
+
+    const handleEditPrice = (price: DBPrice) => {
+        setEditingPrice({ tool_id: price.tool_id, sub_key: price.sub_key });
+        setPricePriceForm({ ...price });
+    };
+
+    const handleSavePrice = async () => {
+        if (!priceForm) return;
+        setIsSaving(true);
+        try {
+            await upsertPrice(priceForm);
+            setEditingPrice(null);
+            onRefresh();
+        } catch (err) {
+            alert('Failed to save price');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleEditTool = (tool: DBTool) => {
+        setEditingTool(tool.id);
+        setToolForm({ ...tool });
+    };
+
+    const handleSaveTool = async () => {
+        if (!toolForm || !editingTool) return;
+        setIsSaving(true);
+        try {
+            await updateTool(editingTool, toolForm);
+            setEditingTool(null);
+            onRefresh();
+        } catch (err) {
+            alert('Failed to save tool');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleDeleteTool = async (id: string) => {
+        if (!confirm('Are you sure you want to remove this tool?')) return;
+        setIsSaving(true);
+        try {
+            await deleteTool(id);
+            onRefresh();
+        } catch (err) {
+            alert('Failed to delete tool');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleAddTool = async () => {
+        if (!newToolForm.item) return;
+        setIsSaving(true);
+        try {
+            const tool = await createTool({
+                item: newToolForm.item,
+                type: 'checkbox',
+                options: null,
+                default_value: null
+            });
+            if (tool) {
+                await upsertPrice({
+                    tool_id: tool.id,
+                    sub_key: null,
+                    csmbs_price: 0,
+                    sss_price: 0,
+                    ucs_price: 0
+                });
+            }
+            setIsAddingTool(false);
+            setNewToolForm({ item: '', category: 'Others' });
+            onRefresh();
+        } catch (err) {
+            alert('Failed to add tool');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    return (
+        <div className="space-y-10 animate-fadeIn relative pb-20">
+             {/* Price Editor Modal */}
+             {editingPrice && priceForm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className="bg-white dark:bg-[#1a233a] rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-fadeIn">
+                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                            <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">Edit Price</h3>
+                            <button onClick={() => setEditingPrice(null)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                        </div>
+                        <div className="p-6 space-y-6">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase text-slate-400">CSMBS Price (฿)</label>
+                                <input type="number" className="w-full p-3 rounded-2xl bg-gray-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-sm font-bold focus:ring-2 focus:ring-pink-500 outline-none" value={priceForm.csmbs_price} onChange={e => setPricePriceForm({...priceForm, csmbs_price: Number(e.target.value)})} />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase text-slate-400">SSS Price (฿)</label>
+                                <input type="number" className="w-full p-3 rounded-2xl bg-gray-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-sm font-bold focus:ring-2 focus:ring-pink-500 outline-none" value={priceForm.sss_price} onChange={e => setPricePriceForm({...priceForm, sss_price: Number(e.target.value)})} />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase text-slate-400">UCS / UC Price (฿)</label>
+                                <input type="number" className="w-full p-3 rounded-2xl bg-gray-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-sm font-bold focus:ring-2 focus:ring-pink-500 outline-none" value={priceForm.ucs_price} onChange={e => setPricePriceForm({...priceForm, ucs_price: Number(e.target.value)})} />
+                            </div>
+                        </div>
+                        <div className="p-6 bg-gray-50 dark:bg-slate-900/50 flex gap-3">
+                            <button onClick={() => setEditingPrice(null)} className="flex-1 py-3 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
+                            <button onClick={handleSavePrice} disabled={isSaving} className="flex-1 py-3 bg-pink-500 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-pink-600 transition-all shadow-lg flex items-center justify-center gap-2">
+                                {isSaving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />} Save
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Tool Editor Modal */}
+            {editingTool && toolForm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className="bg-white dark:bg-[#1a233a] rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-fadeIn">
+                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                            <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">Edit Tool</h3>
+                            <button onClick={() => setEditingTool(null)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                        </div>
+                        <div className="p-6 space-y-6">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase text-slate-400">Tool Name</label>
+                                <input type="text" className="w-full p-3 rounded-2xl bg-gray-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-sm font-bold focus:ring-2 focus:ring-pink-500 outline-none" value={toolForm.item || ''} onChange={e => setToolForm({...toolForm, item: e.target.value})} />
+                            </div>
+                        </div>
+                        <div className="p-6 bg-gray-50 dark:bg-slate-900/50 flex gap-3">
+                            <button onClick={() => setEditingTool(null)} className="flex-1 py-3 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
+                            <button onClick={handleSaveTool} disabled={isSaving} className="flex-1 py-3 bg-pink-500 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-pink-600 transition-all shadow-lg flex items-center justify-center gap-2">
+                                {isSaving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />} Save
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Price Management Section */}
+            <div className="bg-white dark:bg-[#151f32] rounded-3xl p-8 border border-gray-100 dark:border-slate-800 shadow-sm">
+                <div className="flex items-center justify-between mb-8">
+                    <div className="flex items-center gap-3">
+                        <Layers size={22} className="text-pink-500" />
+                        <h2 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tight">Price Management</h2>
+                    </div>
+                    <button onClick={() => setIsAddingTool(true)} className="flex items-center gap-2 px-5 py-2.5 bg-pink-500 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-pink-600 transition-all shadow-lg">
+                        <Plus size={16} strokeWidth={3} /> New Item
+                    </button>
+                </div>
+
+                {isAddingTool && (
+                    <div className="mb-8 p-6 bg-gray-50 dark:bg-slate-900/50 rounded-3xl border border-gray-100 dark:border-slate-800 animate-fadeIn">
+                        <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-[10px] font-black uppercase text-gray-400 tracking-widest">New Inventory Item</h4>
+                            <button onClick={() => setIsAddingTool(false)}><X size={20} className="text-gray-400 hover:text-gray-600" /></button>
+                        </div>
+                        <div className="flex gap-4">
+                            <input 
+                                type="text" 
+                                placeholder="Item Name (e.g. 15-degree blade)" 
+                                className="flex-1 p-4 rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#0f172a] text-sm font-bold outline-none focus:ring-2 focus:ring-pink-500"
+                                value={newToolForm.item}
+                                onChange={e => setNewToolForm({ ...newToolForm, item: e.target.value })}
+                            />
+                            <button onClick={handleAddTool} className="px-8 py-4 bg-pink-500 text-white rounded-2xl text-xs font-black uppercase tracking-widest flex items-center gap-2 hover:bg-pink-600 transition-all shadow-lg">
+                                <Save size={16} /> Create Item
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                <div className="grid grid-cols-1 gap-6">
+                    {tools.map(tool => {
+                        const price = prices.find(p => p.tool_id === tool.id) || { tool_id: tool.id, sub_key: null, csmbs_price: 0, sss_price: 0, ucs_price: 0 };
+                        return (
+                            <div key={tool.id} className="p-6 bg-gray-50/50 dark:bg-slate-900/30 rounded-3xl border border-gray-100 dark:border-slate-800/50 group transition-all hover:border-pink-500/20">
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                                    <div className="flex items-center gap-5">
+                                        <div className="p-4 bg-white dark:bg-slate-800 rounded-2xl text-gray-400 dark:text-slate-500 shadow-sm">
+                                            <ToolIcon id={tool.id} className="w-6 h-6" />
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <h4 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">{tool.item}</h4>
+                                                <button onClick={() => handleEditTool(tool)} className="p-1.5 text-gray-400 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-all bg-white dark:bg-slate-800 rounded-lg shadow-sm"><Edit3 size={12}/></button>
+                                            </div>
+                                            <p className="text-[10px] text-gray-500 dark:text-slate-500 font-black uppercase tracking-widest">System ID: {tool.id}</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-3 gap-8 px-6 py-4 bg-white dark:bg-slate-800/50 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm flex-1 max-w-lg">
+                                        <div className="space-y-1">
+                                            <span className="text-[8px] font-black uppercase text-slate-400 tracking-widest">UCS</span>
+                                            <div className="text-sm font-mono font-black text-gray-900 dark:text-slate-200">฿{price.ucs_price.toLocaleString()}</div>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <span className="text-[8px] font-black uppercase text-slate-400 tracking-widest">SSS</span>
+                                            <div className="text-sm font-mono font-black text-gray-900 dark:text-slate-200">฿{price.sss_price.toLocaleString()}</div>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <span className="text-[8px] font-black uppercase text-slate-400 tracking-widest">CSMBS</span>
+                                            <div className="text-sm font-mono font-black text-gray-900 dark:text-slate-200">฿{price.csmbs_price.toLocaleString()}</div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                                        <button onClick={() => handleEditPrice(price as DBPrice)} className="p-3 text-gray-400 hover:text-pink-500 bg-white dark:bg-slate-800 hover:bg-pink-50 dark:hover:bg-pink-500/10 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 transition-all">
+                                            <Edit3 size={18} />
+                                        </button>
+                                        <button onClick={() => handleDeleteTool(tool.id)} className="p-3 text-gray-400 hover:text-red-500 bg-white dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 transition-all">
+                                            <Trash2 size={18} />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* Procedure Config Section */}
+            <div className="bg-white dark:bg-[#151f32] rounded-3xl p-8 border border-gray-100 dark:border-slate-800 shadow-sm">
+                <div className="flex items-center justify-between mb-8">
+                    <div className="flex items-center gap-3">
+                        <Settings size={22} className="text-blue-500" />
+                        <h2 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tight">Procedure Automation Rules</h2>
+                    </div>
+                    <button className="text-[10px] font-black text-blue-500 hover:text-blue-600 transition-colors uppercase tracking-widest border-b-2 border-blue-500 pb-1">
+                        Advanced Visual Mapping Tool
+                    </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {operations.map(op => {
+                        const opRules = rules.filter(r => r.operation_id === op.id);
+                        return (
+                            <div key={op.id} className="p-6 bg-gray-50/50 dark:bg-slate-900/30 rounded-3xl border border-gray-100 dark:border-slate-800/50 flex flex-col h-full">
+                                <div className="flex items-start justify-between mb-6">
+                                    <div className="space-y-1">
+                                        <h4 className="text-md font-black text-gray-900 dark:text-white uppercase tracking-tight">{op.name}</h4>
+                                        <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest">{op.category}</p>
+                                    </div>
+                                    <span className={`text-[8px] font-black px-2.5 py-1 rounded-lg uppercase tracking-tighter ${opRules.length > 0 ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'bg-gray-100 dark:bg-slate-800 text-gray-400 dark:text-slate-500'}`}>
+                                        {opRules.length > 0 ? `${opRules.length} Automated Actions` : 'Manual Selection'}
+                                    </span>
+                                </div>
+                                
+                                <div className="flex-1 space-y-4 mb-6">
+                                    {opRules.length > 0 && (
+                                        <div className="space-y-2">
+                                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Will Automatically Check:</p>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {opRules.map((rule, rid) => {
+                                                    const target = rule.target_type === 'action' 
+                                                        ? actions.find(a => a.id === rule.target_id)
+                                                        : tools.find(t => t.id === rule.target_id);
+                                                    return (
+                                                        <span key={rid} className="px-2.5 py-1 bg-white dark:bg-slate-800 text-[10px] font-bold text-gray-700 dark:text-slate-200 rounded-xl border border-gray-100 dark:border-slate-700 flex items-center gap-1.5 shadow-sm">
+                                                            <CheckCircle size={10} className="text-emerald-500" />
+                                                            {target?.item || rule.target_id}
+                                                            {rule.default_selected_value && <span className="text-[8px] text-pink-500 font-black ml-1">→ {rule.default_selected_value}</span>}
+                                                        </span>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-2">
+                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Trigger Keywords:</p>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {op.keywords.map(k => (
+                                                <span key={k} className="px-2 py-0.5 bg-blue-50/50 dark:bg-blue-900/10 text-[9px] font-black text-blue-500/70 dark:text-blue-400/70 rounded-lg border border-blue-100/50 dark:border-blue-900/20 italic">
+                                                    #{k}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <button className="w-full py-3 bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-800 text-[10px] font-black text-slate-400 uppercase tracking-widest rounded-2xl hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors shadow-sm">
+                                    Edit Mapping Logic
+                                </button>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
     );
 };
 
@@ -416,12 +779,16 @@ export default function App() {
     const [isDarkMode, setIsDarkMode] = useState(false);
     const [config, setConfig] = useState<{tools: DBTool[], actions: DBAction[], operations: DBOperation[], rules: DBRule[], prices: DBPrice[]} | null>(null);
 
+    const refreshData = async () => {
+        const data = await fetchConfig();
+        setConfig(data);
+    };
+
     useEffect(() => {
         const load = async () => {
             const data = await fetchConfig();
             setConfig(data);
             
-            // Initialize session after config loads
             const initialActions: ChecklistItemData[] = data.actions.map(a => ({
                 id: a.id, item: a.item, type: 'checkbox', checked: false
             }));
@@ -483,9 +850,8 @@ export default function App() {
     };
 
     const [session, setSession] = useState<PatientSession>(initialSession);
-    const [currentView, setCurrentView] = useState<'checklist' | 'prices'>('checklist');
+    const [currentView, setCurrentView] = useState<'checklist' | 'inventory' | 'admin'>('checklist');
 
-    // Logic implementation using config from Supabase
     const calculateAutoChecklistDB = (currentSession: PatientSession) => {
         if (!config) return { actions: currentSession.actions, tools: currentSession.tools, mpSelectedTypes: currentSession.mpSelectedTypes };
 
@@ -496,20 +862,15 @@ export default function App() {
         let newTools = JSON.parse(JSON.stringify(currentSession.tools)).map((t: any) => ({ ...t, checked: false, autoPopulated: false }));
         let showMp = false;
 
-        // LA Logic
         if (currentSession.anesthesiaType === ANESTHESIA_TYPES.LA) {
             const isTxOrGdi = /\btx\b/.test(normalizedOpText) || normalizedOpText.includes('trabeculectomy') || /\bgdi\b/.test(normalizedOpText) || normalizedOpText.includes('drainage implant') || normalizedOpText.includes('xen');
             const isOculoOrStrabismus = normalizedOpText.includes('oculoplastic') || normalizedOpText.includes('strabismus') || normalizedOpText.includes('squint') || normalizedOpText.includes('ptosis') || normalizedOpText.includes('frontalis') || normalizedOpText.includes('sling') || normalizedOpText.includes('lid') || normalizedOpText.includes('entropion') || normalizedOpText.includes('ectropion') || normalizedOpText.includes('blepharoplasty') || normalizedOpText.includes('edcr') || normalizedOpText.includes('dcr');
             if (!isTxOrGdi && !isOculoOrStrabismus) {
                 const axl = newActions.find((a: any) => a.id === 'axl');
-                if (axl) { 
-                    axl.checked = true; 
-                    axl.autoPopulated = true; 
-                }
+                if (axl) { axl.checked = true; axl.autoPopulated = true; }
             }
         }
 
-        // Apply Rules based on matched operations
         config.operations.forEach(op => {
             const isMatch = op.keywords.some(k => {
                 const normalizedKeyword = normalizeText(k).trim();
@@ -531,25 +892,19 @@ export default function App() {
                         if (rule.default_selected_value) item.selectedValue = rule.default_selected_value;
                     }
                 });
-
                 if (op.name === "MP") showMp = true;
                 if (op.category === "Lens Surgery" || op.category === "Retinal Surgery") {
                     const axl = newActions.find((a: any) => a.id === 'axl');
-                    if (axl) { 
-                        axl.checked = true; 
-                        axl.autoPopulated = true; 
-                    }
+                    if (axl) { axl.checked = true; axl.autoPopulated = true; }
                 }
             }
         });
 
-        // CTR Note Logic
         const ctrTool = newTools.find((t: any) => t.id === 'ctr-no');
         if (ctrTool && ctrTool.checked) {
             ctrTool.note = 'AXL<24: no.12, AXL 24-28: no.13, AXL>28: no.14';
         }
 
-        // MP Specific Logic
         let finalMpTypes: string[] = []; 
         const isMpActive = normalizedOpText.includes('mp') || normalizedOpText.includes('membrane peeling') || normalizedOpText.includes('ilm') || showMp;
         if (isMpActive) {
@@ -562,7 +917,6 @@ export default function App() {
         }
         newTools = applyMpToolsLogic(newTools, [...new Set(finalMpTypes)], currentSession.diagnosis);
 
-        // Phaco Machine Logic
         if (normalizedOpText.includes('phaco')) {
             const machineTool = newTools.find((t: any) => t.id === 'centurion-legion');
             if (machineTool) {
@@ -575,7 +929,6 @@ export default function App() {
             }
         }
 
-        // GDI Logic
         const gdiTool = newTools.find((t: any) => t.id === 'glaucoma-device');
         if (gdiTool) {
             const gdiKeywords: Record<string, string[]> = {
@@ -595,7 +948,6 @@ export default function App() {
             }
         }
 
-        // PPV Soft Tip Logic
         const ppvSet = newTools.find((t: any) => t.id === 'ppv-set');
         if (ppvSet && ppvSet.checked) {
             const softTip = newTools.find((t: any) => t.id === 'soft-tip');
@@ -605,11 +957,8 @@ export default function App() {
         return { actions: newActions, tools: newTools, mpSelectedTypes: finalMpTypes };
     };
 
-    // Auto update checklist whenever relevant fields change
     useEffect(() => {
         if (!config) return;
-
-        // NEW: If any retinal procedure is selected, ensure PPV is also selected
         const normalizedInput = normalizeText(session.operationInput);
         const retinalKeywords = ['mp', 'membrane peeling', 'ilm', 'el', 'endolaser', 'so', 'soi', 'hd so', 'heavy so', 'pfcl'];
         const hasRetinalProc = retinalKeywords.some(k => normalizedInput.includes(k));
@@ -673,10 +1022,8 @@ export default function App() {
         let currentOpInput = session.operationInput.trim();
 
         if (currentVals.includes(keyword)) {
-            // Deselect
             currentVals = currentVals.filter(v => v !== keyword);
             if (PPV_TYPES.includes(keyword)) {
-                // If removing 23G or 25G, check if it's attached to PPV
                 const gaugeRegex = new RegExp(`\\b${keyword}(PPV)?\\b`, 'i');
                 if (gaugeRegex.test(currentOpInput)) {
                     currentOpInput = currentOpInput.replace(gaugeRegex, 'PPV');
@@ -689,11 +1036,9 @@ export default function App() {
                 }
             }
         } else {
-            // Select
             if (exclusiveGroup) {
                 exclusiveGroup.forEach(g => {
                     if (g !== keyword && currentVals.includes(g)) {
-                        // Switching gauge (e.g., from 25G to 23G)
                         const otherGaugeRegex = new RegExp(`\\b${g}(PPV)?\\b`, 'i');
                         if (otherGaugeRegex.test(currentOpInput)) {
                             currentOpInput = currentOpInput.replace(otherGaugeRegex, `${keyword}PPV`);
@@ -706,9 +1051,7 @@ export default function App() {
                 currentVals = currentVals.filter(v => !exclusiveGroup.includes(v));
             }
             currentVals.push(keyword);
-            
             if (PPV_TYPES.includes(keyword)) {
-                // Check if PPV exists in input to merge
                 const ppvRegex = /\bPPV\b/i;
                 if (ppvRegex.test(currentOpInput)) {
                     currentOpInput = currentOpInput.replace(ppvRegex, `${keyword}PPV`);
@@ -758,41 +1101,35 @@ export default function App() {
                     <div className="flex items-center gap-6">
                         <div className="flex items-center gap-3">
                             <Eye size={24} className="text-[#8e5a7d] dark:text-pink-200" />
-                            <h1 className="font-headline font-bold text-xl sm:text-2xl text-[#101421] dark:text-white leading-tight">OphthalSupport</h1>
+                            <h1 className="font-headline font-bold text-xl sm:text-2xl text-[#101421] dark:text-white leading-tight tracking-tighter">OphthalSupport</h1>
                         </div>
                         <nav className="hidden sm:flex items-center gap-1">
-                            <button 
-                                onClick={() => setCurrentView('checklist')}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${currentView === 'checklist' ? 'bg-[#fcb7f0] text-slate-800 shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-800'}`}
-                            >
-                                Checklist
-                            </button>
-                            <button 
-                                onClick={() => setCurrentView('prices')}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${currentView === 'prices' ? 'bg-[#fcb7f0] text-slate-800 shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-800'}`}
-                            >
-                                Tools & Prices
-                            </button>
+                            {[
+                                { id: 'checklist', label: 'Checklist', icon: ListChecks },
+                                { id: 'inventory', label: 'Inventory', icon: Box },
+                                { id: 'admin', label: 'Admin', icon: Settings },
+                            ].map(item => (
+                                <button 
+                                    key={item.id}
+                                    onClick={() => setCurrentView(item.id as any)}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                                        currentView === item.id 
+                                        ? 'bg-[#fcb7f0] text-slate-800 shadow-sm' 
+                                        : 'text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                                    }`}
+                                >
+                                    <item.icon size={14} />
+                                    {item.label}
+                                </button>
+                            ))}
                         </nav>
                     </div>
                     <div className="flex items-center gap-2">
                         <button 
-                            onClick={() => setCurrentView(currentView === 'checklist' ? 'prices' : 'checklist')}
-                            className="sm:hidden p-2 rounded-lg bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400"
-                            aria-label="Toggle view"
-                        >
-                            {currentView === 'checklist' ? <Calculator size={18} /> : <ListChecks size={18} />}
-                        </button>
-                        <button 
                             onClick={toggleTheme} 
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-0 ${isDarkMode ? 'bg-brand-primary dark:bg-brand-primary-dark' : 'bg-gray-200 dark:bg-slate-700'}`}
-                            aria-label="Toggle theme"
                         >
-                            <span
-                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                    isDarkMode ? 'translate-x-6' : 'translate-x-1'
-                                } flex items-center justify-center shadow-sm`}
-                            >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isDarkMode ? 'translate-x-6' : 'translate-x-1'} flex items-center justify-center shadow-sm`}>
                                 {isDarkMode ? <Moon size={10} className="text-brand-primary dark:text-brand-primary-dark" /> : <Sun size={10} className="text-gray-400" />}
                             </span>
                         </button>
@@ -800,10 +1137,25 @@ export default function App() {
                 </div>
             </header>
 
-            <main className="max-w-3xl mx-auto px-3 py-3 sm:px-4 sm:py-6">
-                {currentView === 'prices' ? (
-                    <PriceListPage tools={config.tools} prices={config.prices} />
-                ) : (
+            <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 sm:py-10">
+                {currentView === 'inventory' && (
+                    <PriceListPage 
+                        tools={config.tools} 
+                        prices={config.prices} 
+                        onAdminClick={() => setCurrentView('admin')}
+                    />
+                )}
+                {currentView === 'admin' && (
+                    <AdminPage 
+                        tools={config.tools} 
+                        prices={config.prices} 
+                        operations={config.operations}
+                        rules={config.rules}
+                        actions={config.actions}
+                        onRefresh={refreshData}
+                    />
+                )}
+                {currentView === 'checklist' && (
                     <div className="space-y-4 sm:space-y-6">
                         <div className="space-y-4 sm:space-y-6">
                             <section className="bg-white dark:bg-[#151f32] rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 p-3 sm:p-4 transition-colors duration-300">
@@ -1063,10 +1415,17 @@ export default function App() {
             </main>
 
             <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+                body { font-family: 'Inter', sans-serif; }
                 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-                .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.1); border-radius: 4px; }
-                .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.3); border-radius: 4px; }
-                .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.5); }
+                .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.05); border-radius: 10px; }
+                .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.1); border-radius: 10px; }
+                .dark .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); }
+                .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); }
+                @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+                .animate-fadeIn { animation: fadeIn 0.4s ease-out forwards; }
+                .animate-spin-slow { animation: spin 8s linear infinite; }
+                @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
             `}</style>
         </div>
     );
