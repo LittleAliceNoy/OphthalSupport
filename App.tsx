@@ -58,31 +58,31 @@ import {
 import { fetchConfig, DBTool, DBAction, DBOperation, DBRule, DBPrice, updateTool, createTool, deleteTool, upsertPrice } from './configService';
 
 // --- Constants ---
-const TOOL_CATEGORIES_LIST = ['Lens Surgery', 'Retinal Surgery', 'Glaucoma', 'Cornea', 'General & Knives', 'Others'];
+const TOOL_CATEGORIES_LIST = ['Lens Surgery', 'Retina', 'Glaucoma', 'Cornea', 'General'];
 
 const TOOL_CATEGORIES: Record<string, string> = {
-    '15-degree-blade': 'General & Knives',
-    'slit-knife': 'General & Knives',
-    'crescent-knife': 'General & Knives',
+    '15-degree-blade': 'General',
+    'slit-knife': 'General',
+    'crescent-knife': 'General',
     'centurion-legion': 'Lens Surgery',
     'zeiss-quattro': 'Lens Surgery',
     'basic-phaco-pack': 'Lens Surgery',
     'ctr-no': 'Lens Surgery',
     'cts': 'Lens Surgery',
     'iris-retractor': 'Lens Surgery',
-    'ppv-set': 'Retinal Surgery',
-    'bbg': 'Retinal Surgery',
-    'ilm-forceps': 'Retinal Surgery',
-    'micro-scissor': 'Retinal Surgery',
-    'silicone-oil': 'Retinal Surgery',
-    'silicone-oil-hd': 'Retinal Surgery',
-    'endolaser': 'Retinal Surgery',
-    'dk-line': 'Retinal Surgery',
-    'soft-tip': 'Retinal Surgery',
+    'ppv-set': 'Retina',
+    'bbg': 'Retina',
+    'ilm-forceps': 'Retina',
+    'micro-scissor': 'Retina',
+    'silicone-oil': 'Retina',
+    'silicone-oil-hd': 'Retina',
+    'endolaser': 'Retina',
+    'dk-line': 'Retina',
+    'soft-tip': 'Retina',
     'glaucoma-device': 'Glaucoma',
     'punch-trephine': 'Cornea',
-    '5fu': 'Others',
-    'fibrin-glue': 'Others',
+    '5fu': 'General',
+    'fibrin-glue': 'General',
 };
 
 // --- Utility Functions ---
@@ -366,7 +366,6 @@ const PriceListPage = ({ tools, prices, onAdminClick }: { tools: DBTool[], price
             }
         });
 
-        // Sort each category's items alphabetically by their display name
         Object.keys(groups).forEach(category => {
             groups[category].sort((a, b) => {
                 const nameA = getDisplayName(a.tool, a.price).toLowerCase();
@@ -382,82 +381,87 @@ const PriceListPage = ({ tools, prices, onAdminClick }: { tools: DBTool[], price
     const categoriesToRender = selectedCategory === 'All' ? TOOL_CATEGORIES_LIST : [selectedCategory];
 
     return (
-        <div className="space-y-8 animate-fadeIn max-w-3xl mx-auto">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-end gap-4">
-                <div className="flex gap-2">
+        <div className="space-y-6 animate-fadeIn max-w-4xl mx-auto">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex flex-wrap gap-1.5">
+                    {categories.map(cat => (
+                        <button 
+                            key={cat}
+                            onClick={() => setSelectedCategory(cat)}
+                            className={`px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all border ${
+                                selectedCategory === cat 
+                                ? 'bg-[#fcb7f0] text-slate-800 border-[#fcb7f0] shadow-sm' 
+                                : 'bg-white dark:bg-[#151f32] text-gray-400 dark:text-slate-500 border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800'
+                            }`}
+                        >
+                            {cat}
+                        </button>
+                    ))}
+                </div>
+                <div className="flex gap-2 shrink-0">
                     <div className="relative group">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-pink-500 transition-colors" />
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#8e5a7d] transition-colors" />
                         <input 
                             type="text" 
                             placeholder="Search tools..." 
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-9 pr-4 py-2 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-pink-500/20 outline-none border border-gray-100 dark:border-slate-700 focus:border-pink-500/30 w-40 sm:w-64 transition-all shadow-sm"
+                            className="pl-9 pr-4 py-2 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-[#fcb7f0]/30 outline-none border border-gray-100 dark:border-slate-800 focus:border-[#fcb7f0] w-40 sm:w-64 transition-all shadow-sm"
                         />
                     </div>
-                    <button onClick={onAdminClick} className="flex items-center gap-2 px-4 py-2 bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400 rounded-xl text-xs font-bold hover:bg-pink-200 dark:hover:bg-pink-900/50 transition-all border border-pink-200 dark:border-pink-900/50">
+                    <button onClick={onAdminClick} className="flex items-center gap-2 px-4 py-2 bg-[#fcb7f0] text-slate-800 rounded-xl text-xs font-bold hover:shadow-md transition-all">
                         <Plus size={14} strokeWidth={3} /> New Item
                     </button>
                 </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-                {categories.map(cat => (
-                    <button 
-                        key={cat}
-                        onClick={() => setSelectedCategory(cat)}
-                        className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-wider transition-all border ${
-                            selectedCategory === cat 
-                            ? 'bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400 border-pink-200 dark:border-pink-900/50 shadow-sm scale-105' 
-                            : 'bg-gray-50 dark:bg-slate-900 text-gray-400 dark:text-slate-500 border-gray-200 dark:border-slate-800 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-600 dark:hover:text-slate-300'
-                        }`}
-                    >
-                        {cat}
-                    </button>
-                ))}
-            </div>
-
-            <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-6">
                 {categoriesToRender.map(category => {
                     const items = categorizedTools[category] || [];
                     if (items.length === 0) return null;
 
                     return (
-                        <div key={category} className="bg-white dark:bg-[#151f32] rounded-3xl p-6 border border-gray-100 dark:border-slate-800 shadow-sm overflow-hidden">
-                            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-pink-500 mb-6 flex items-center gap-2">
-                                <span className="w-1 h-3 bg-pink-500 rounded-full"></span>
-                                {category}
-                            </h3>
-                            <div className="divide-y divide-gray-50 dark:divide-slate-800/50 -mx-6 px-6">
+                        <section key={category} className="bg-white dark:bg-[#151f32] rounded-3xl shadow-sm border border-gray-100 dark:border-slate-800 p-6 transition-colors duration-300">
+                            <div className="flex items-center gap-2 mb-6 border-b border-gray-50 dark:border-slate-800 pb-3">
+                                <Box size={16} className="text-[#8e5a7d] dark:text-brand-primary-dark" />
+                                <h3 className="text-xs font-headline font-bold text-gray-900 dark:text-white uppercase tracking-[0.15em]">
+                                    {category}
+                                </h3>
+                            </div>
+                            <div className="grid grid-cols-1 gap-4">
                                 {items.map(({ tool, price }, idx) => {
                                     const isReusable = tool.type === 'radio' || tool.id === 'ppv-set' || tool.id === 'centurion-legion';
                                     return (
-                                        <div key={`${tool.id}-${price.sub_key}-${idx}`} className="py-6 first:pt-0 last:pb-0 transition-all group">
-                                            <div className="flex items-start gap-4">
-                                                <div className="p-3 bg-gray-50 dark:bg-slate-900 rounded-2xl text-gray-400 dark:text-slate-500 group-hover:text-pink-500 transition-colors">
-                                                    <ToolIcon id={tool.id} />
-                                                </div>
-                                                <div className="flex-1 space-y-1">
-                                                    <div className="flex items-start justify-between">
-                                                        <h3 className="text-sm font-bold text-gray-900 dark:text-white leading-tight">
+                                        <div key={`${tool.id}-${price.sub_key}-${idx}`} className="group relative">
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gray-50/50 dark:bg-slate-900/30 rounded-2xl p-4 border border-transparent hover:border-[#fcb7f0]/30 transition-all">
+                                                <div className="flex items-center gap-4 flex-1">
+                                                    <div className="p-2.5 bg-white dark:bg-slate-800 rounded-xl text-gray-400 group-hover:text-[#8e5a7d] transition-colors shadow-sm shrink-0">
+                                                        <ToolIcon id={tool.id} className="w-5 h-5" />
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <h4 className="text-[13px] font-bold text-gray-900 dark:text-white leading-tight mb-1 truncate">
                                                             {getDisplayName(tool, price)}
-                                                        </h3>
-                                                        <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter ${isReusable ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400'}`}>
+                                                        </h4>
+                                                        <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter inline-block ${isReusable ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400'}`}>
                                                             {isReusable ? 'Reusable' : 'Single-use'}
                                                         </span>
                                                     </div>
-                                                    <div className="pt-4 grid grid-cols-3 gap-2">
-                                                        <div className="space-y-1">
-                                                            <span className="text-[8px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-widest">UCS / UC</span>
-                                                            <div className="text-xs font-mono font-bold text-gray-900 dark:text-slate-200">฿{price.ucs_price.toLocaleString()}</div>
+                                                </div>
+                                                <div className="bg-white dark:bg-slate-800/50 rounded-xl px-3 py-2 shadow-sm border border-gray-50 dark:border-slate-800 sm:w-[320px] shrink-0">
+                                                    <div className="grid grid-cols-[1fr_1px_1fr_1px_1fr] items-center">
+                                                        <div className="flex flex-col items-center">
+                                                            <span className="text-[7px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-wider">UCS</span>
+                                                            <span className="text-[11px] font-mono font-bold text-gray-900 dark:text-slate-200">฿{price.ucs_price.toLocaleString()}</span>
                                                         </div>
-                                                        <div className="space-y-1">
-                                                            <span className="text-[8px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-widest">SSS</span>
-                                                            <div className="text-xs font-mono font-bold text-gray-900 dark:text-slate-200">฿{price.sss_price.toLocaleString()}</div>
+                                                        <div className="w-[1px] h-6 bg-gray-100 dark:bg-slate-700"></div>
+                                                        <div className="flex flex-col items-center">
+                                                            <span className="text-[7px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-wider">SSS</span>
+                                                            <span className="text-[11px] font-mono font-bold text-gray-900 dark:text-slate-200">฿{price.sss_price.toLocaleString()}</span>
                                                         </div>
-                                                        <div className="space-y-1">
-                                                            <span className="text-[8px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-widest">CSMBS</span>
-                                                            <div className="text-xs font-mono font-bold text-gray-900 dark:text-slate-200">฿{price.csmbs_price.toLocaleString()}</div>
+                                                        <div className="w-[1px] h-6 bg-gray-100 dark:bg-slate-700"></div>
+                                                        <div className="flex flex-col items-center">
+                                                            <span className="text-[7px] font-black uppercase text-gray-400 dark:text-slate-500 tracking-wider">CSMBS</span>
+                                                            <span className="text-[11px] font-mono font-bold text-gray-900 dark:text-slate-200">฿{price.csmbs_price.toLocaleString()}</span>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -466,7 +470,7 @@ const PriceListPage = ({ tools, prices, onAdminClick }: { tools: DBTool[], price
                                     );
                                 })}
                             </div>
-                        </div>
+                        </section>
                     );
                 })}
             </div>
@@ -564,32 +568,32 @@ const AdminPage = ({ tools, prices, operations, rules, onRefresh, actions }: { t
     };
 
     return (
-        <div className="space-y-10 animate-fadeIn relative pb-20">
+        <div className="space-y-10 animate-fadeIn relative pb-20 max-w-6xl mx-auto">
              {/* Price Editor Modal */}
              {editingPrice && priceForm && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
                     <div className="bg-white dark:bg-[#1a233a] rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-fadeIn">
                         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                            <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">Edit Price</h3>
+                            <h3 className="text-xs font-headline font-bold uppercase tracking-widest text-slate-500">Edit Price</h3>
                             <button onClick={() => setEditingPrice(null)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
                         </div>
                         <div className="p-6 space-y-6">
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase text-slate-400">CSMBS Price (฿)</label>
-                                <input type="number" className="w-full p-3 rounded-2xl bg-gray-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-sm font-bold focus:ring-2 focus:ring-pink-500 outline-none" value={priceForm.csmbs_price} onChange={e => setPricePriceForm({...priceForm, csmbs_price: Number(e.target.value)})} />
+                                <input type="number" className="w-full p-3 rounded-2xl bg-gray-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-sm font-bold focus:ring-2 focus:ring-[#fcb7f0] outline-none" value={priceForm.csmbs_price} onChange={e => setPricePriceForm({...priceForm, csmbs_price: Number(e.target.value)})} />
                             </div>
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase text-slate-400">SSS Price (฿)</label>
-                                <input type="number" className="w-full p-3 rounded-2xl bg-gray-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-sm font-bold focus:ring-2 focus:ring-pink-500 outline-none" value={priceForm.sss_price} onChange={e => setPricePriceForm({...priceForm, sss_price: Number(e.target.value)})} />
+                                <input type="number" className="w-full p-3 rounded-2xl bg-gray-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-sm font-bold focus:ring-2 focus:ring-[#fcb7f0] outline-none" value={priceForm.sss_price} onChange={e => setPricePriceForm({...priceForm, sss_price: Number(e.target.value)})} />
                             </div>
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase text-slate-400">UCS / UC Price (฿)</label>
-                                <input type="number" className="w-full p-3 rounded-2xl bg-gray-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-sm font-bold focus:ring-2 focus:ring-pink-500 outline-none" value={priceForm.ucs_price} onChange={e => setPricePriceForm({...priceForm, ucs_price: Number(e.target.value)})} />
+                                <input type="number" className="w-full p-3 rounded-2xl bg-gray-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-sm font-bold focus:ring-2 focus:ring-[#fcb7f0] outline-none" value={priceForm.ucs_price} onChange={e => setPricePriceForm({...priceForm, ucs_price: Number(e.target.value)})} />
                             </div>
                         </div>
                         <div className="p-6 bg-gray-50 dark:bg-slate-900/50 flex gap-3">
-                            <button onClick={() => setEditingPrice(null)} className="flex-1 py-3 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
-                            <button onClick={handleSavePrice} disabled={isSaving} className="flex-1 py-3 bg-pink-500 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-pink-600 transition-all shadow-lg flex items-center justify-center gap-2">
+                            <button onClick={() => setEditingPrice(null)} className="flex-1 py-3 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors uppercase tracking-widest">Cancel</button>
+                            <button onClick={handleSavePrice} disabled={isSaving} className="flex-1 py-3 bg-[#fcb7f0] text-slate-800 rounded-2xl text-xs font-black uppercase tracking-widest hover:shadow-lg transition-all flex items-center justify-center gap-2">
                                 {isSaving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />} Save
                             </button>
                         </div>
@@ -602,18 +606,18 @@ const AdminPage = ({ tools, prices, operations, rules, onRefresh, actions }: { t
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
                     <div className="bg-white dark:bg-[#1a233a] rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-fadeIn">
                         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                            <h3 className="text-sm font-black uppercase tracking-widest text-slate-500">Edit Tool</h3>
+                            <h3 className="text-xs font-headline font-bold uppercase tracking-widest text-slate-500">Edit Tool</h3>
                             <button onClick={() => setEditingTool(null)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
                         </div>
                         <div className="p-6 space-y-6">
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black uppercase text-slate-400">Tool Name</label>
-                                <input type="text" className="w-full p-3 rounded-2xl bg-gray-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-sm font-bold focus:ring-2 focus:ring-pink-500 outline-none" value={toolForm.item || ''} onChange={e => setToolForm({...toolForm, item: e.target.value})} />
+                                <input type="text" className="w-full p-3 rounded-2xl bg-gray-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-sm font-bold focus:ring-2 focus:ring-[#fcb7f0] outline-none" value={toolForm.item || ''} onChange={e => setToolForm({...toolForm, item: e.target.value})} />
                             </div>
                         </div>
                         <div className="p-6 bg-gray-50 dark:bg-slate-900/50 flex gap-3">
-                            <button onClick={() => setEditingTool(null)} className="flex-1 py-3 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
-                            <button onClick={handleSaveTool} disabled={isSaving} className="flex-1 py-3 bg-pink-500 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-pink-600 transition-all shadow-lg flex items-center justify-center gap-2">
+                            <button onClick={() => setEditingTool(null)} className="flex-1 py-3 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors uppercase tracking-widest">Cancel</button>
+                            <button onClick={handleSaveTool} disabled={isSaving} className="flex-1 py-3 bg-[#fcb7f0] text-slate-800 rounded-2xl text-xs font-black uppercase tracking-widest hover:shadow-lg transition-all flex items-center justify-center gap-2">
                                 {isSaving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />} Save
                             </button>
                         </div>
@@ -622,13 +626,13 @@ const AdminPage = ({ tools, prices, operations, rules, onRefresh, actions }: { t
             )}
 
             {/* Price Management Section */}
-            <div className="bg-white dark:bg-[#151f32] rounded-3xl p-8 border border-gray-100 dark:border-slate-800 shadow-sm">
-                <div className="flex items-center justify-between mb-8">
+            <section className="bg-white dark:bg-[#151f32] rounded-3xl p-8 border border-gray-100 dark:border-slate-800 shadow-sm transition-colors duration-300">
+                <div className="flex items-center justify-between mb-8 border-b border-gray-50 dark:border-slate-800 pb-4">
                     <div className="flex items-center gap-3">
-                        <Layers size={22} className="text-pink-500" />
-                        <h2 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tight">Price Management</h2>
+                        <Layers size={20} className="text-[#8e5a7d]" strokeWidth={2.5} />
+                        <h2 className="text-xs font-headline font-bold text-gray-900 dark:text-white uppercase tracking-[0.15em]">Price Management</h2>
                     </div>
-                    <button onClick={() => setIsAddingTool(true)} className="flex items-center gap-2 px-5 py-2.5 bg-pink-500 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-pink-600 transition-all shadow-lg">
+                    <button onClick={() => setIsAddingTool(true)} className="flex items-center gap-2 px-5 py-2.5 bg-[#fcb7f0] text-slate-800 rounded-2xl text-xs font-black uppercase tracking-widest hover:shadow-lg transition-all">
                         <Plus size={16} strokeWidth={3} /> New Item
                     </button>
                 </div>
@@ -643,57 +647,59 @@ const AdminPage = ({ tools, prices, operations, rules, onRefresh, actions }: { t
                             <input 
                                 type="text" 
                                 placeholder="Item Name (e.g. 15-degree blade)" 
-                                className="flex-1 p-4 rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#0f172a] text-sm font-bold outline-none focus:ring-2 focus:ring-pink-500"
+                                className="flex-1 p-4 rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#0f172a] text-sm font-bold outline-none focus:ring-2 focus:ring-[#fcb7f0]"
                                 value={newToolForm.item}
                                 onChange={e => setNewToolForm({ ...newToolForm, item: e.target.value })}
                             />
-                            <button onClick={handleAddTool} className="px-8 py-4 bg-pink-500 text-white rounded-2xl text-xs font-black uppercase tracking-widest flex items-center gap-2 hover:bg-pink-600 transition-all shadow-lg">
+                            <button onClick={handleAddTool} className="px-8 py-4 bg-[#fcb7f0] text-slate-800 rounded-2xl text-xs font-black uppercase tracking-widest flex items-center gap-2 hover:shadow-lg transition-all">
                                 <Save size={16} /> Create Item
                             </button>
                         </div>
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 gap-6">
+                <div className="space-y-4">
                     {tools.map(tool => {
                         const price = prices.find(p => p.tool_id === tool.id) || { tool_id: tool.id, sub_key: null, csmbs_price: 0, sss_price: 0, ucs_price: 0 };
                         return (
-                            <div key={tool.id} className="p-6 bg-gray-50/50 dark:bg-slate-900/30 rounded-3xl border border-gray-100 dark:border-slate-800/50 group transition-all hover:border-pink-500/20">
+                            <div key={tool.id} className="p-4 bg-gray-50/50 dark:bg-slate-900/30 rounded-2xl border border-gray-100 dark:border-slate-800/50 group transition-all hover:bg-white dark:hover:bg-slate-800 hover:shadow-sm">
                                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                                    <div className="flex items-center gap-5">
-                                        <div className="p-4 bg-white dark:bg-slate-800 rounded-2xl text-gray-400 dark:text-slate-500 shadow-sm">
-                                            <ToolIcon id={tool.id} className="w-6 h-6" />
+                                    <div className="flex items-center gap-4">
+                                        <div className="p-3 bg-white dark:bg-slate-800 rounded-xl text-gray-400 group-hover:text-[#8e5a7d] transition-colors shadow-sm">
+                                            <ToolIcon id={tool.id} className="w-5 h-5" />
                                         </div>
                                         <div>
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <h4 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tight">{tool.item}</h4>
-                                                <button onClick={() => handleEditTool(tool)} className="p-1.5 text-gray-400 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-all bg-white dark:bg-slate-800 rounded-lg shadow-sm"><Edit3 size={12}/></button>
+                                            <div className="flex items-center gap-2 mb-0.5">
+                                                <h4 className="text-[13px] font-bold text-gray-900 dark:text-white uppercase tracking-tight">{tool.item}</h4>
+                                                <button onClick={() => handleEditTool(tool)} className="p-1 text-blue-500 opacity-0 group-hover:opacity-100 transition-all"><Edit3 size={12}/></button>
                                             </div>
-                                            <p className="text-[10px] text-gray-500 dark:text-slate-500 font-black uppercase tracking-widest">System ID: {tool.id}</p>
+                                            <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">ID: {tool.id}</p>
                                         </div>
                                     </div>
                                     
-                                    <div className="grid grid-cols-3 gap-8 px-6 py-4 bg-white dark:bg-slate-800/50 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm flex-1 max-w-lg">
-                                        <div className="space-y-1">
-                                            <span className="text-[8px] font-black uppercase text-slate-400 tracking-widest">UCS</span>
-                                            <div className="text-sm font-mono font-black text-gray-900 dark:text-slate-200">฿{price.ucs_price.toLocaleString()}</div>
+                                    <div className="flex flex-1 max-w-md items-center justify-around bg-white dark:bg-slate-800/50 rounded-xl px-6 py-2 shadow-sm border border-gray-50 dark:border-slate-800">
+                                        <div className="flex flex-col items-center">
+                                            <span className="text-[7px] font-black uppercase text-gray-400 tracking-wider">UCS</span>
+                                            <span className="text-xs font-mono font-bold text-gray-900 dark:text-slate-200">฿{price.ucs_price.toLocaleString()}</span>
                                         </div>
-                                        <div className="space-y-1">
-                                            <span className="text-[8px] font-black uppercase text-slate-400 tracking-widest">SSS</span>
-                                            <div className="text-sm font-mono font-black text-gray-900 dark:text-slate-200">฿{price.sss_price.toLocaleString()}</div>
+                                        <div className="w-[1px] h-6 bg-gray-100 dark:bg-slate-700"></div>
+                                        <div className="flex flex-col items-center">
+                                            <span className="text-[7px] font-black uppercase text-gray-400 tracking-wider">SSS</span>
+                                            <span className="text-xs font-mono font-bold text-gray-900 dark:text-slate-200">฿{price.sss_price.toLocaleString()}</span>
                                         </div>
-                                        <div className="space-y-1">
-                                            <span className="text-[8px] font-black uppercase text-slate-400 tracking-widest">CSMBS</span>
-                                            <div className="text-sm font-mono font-black text-gray-900 dark:text-slate-200">฿{price.csmbs_price.toLocaleString()}</div>
+                                        <div className="w-[1px] h-6 bg-gray-100 dark:bg-slate-700"></div>
+                                        <div className="flex flex-col items-center">
+                                            <span className="text-[7px] font-black uppercase text-gray-400 tracking-wider">CSMBS</span>
+                                            <span className="text-xs font-mono font-bold text-gray-900 dark:text-slate-200">฿{price.csmbs_price.toLocaleString()}</span>
                                         </div>
                                     </div>
 
-                                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
-                                        <button onClick={() => handleEditPrice(price as DBPrice)} className="p-3 text-gray-400 hover:text-pink-500 bg-white dark:bg-slate-800 hover:bg-pink-50 dark:hover:bg-pink-500/10 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 transition-all">
-                                            <Edit3 size={18} />
+                                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                                        <button onClick={() => handleEditPrice(price as DBPrice)} className="p-2.5 text-gray-400 hover:text-[#8e5a7d] bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 transition-all">
+                                            <Edit3 size={16} />
                                         </button>
-                                        <button onClick={() => handleDeleteTool(tool.id)} className="p-3 text-gray-400 hover:text-red-500 bg-white dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 transition-all">
-                                            <Trash2 size={18} />
+                                        <button onClick={() => handleDeleteTool(tool.id)} className="p-2.5 text-gray-400 hover:text-red-500 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 transition-all">
+                                            <Trash2 size={16} />
                                         </button>
                                     </div>
                                 </div>
@@ -701,17 +707,17 @@ const AdminPage = ({ tools, prices, operations, rules, onRefresh, actions }: { t
                         );
                     })}
                 </div>
-            </div>
+            </section>
 
             {/* Procedure Config Section */}
-            <div className="bg-white dark:bg-[#151f32] rounded-3xl p-8 border border-gray-100 dark:border-slate-800 shadow-sm">
-                <div className="flex items-center justify-between mb-8">
+            <section className="bg-white dark:bg-[#151f32] rounded-3xl p-8 border border-gray-100 dark:border-slate-800 shadow-sm transition-colors duration-300">
+                <div className="flex items-center justify-between mb-8 border-b border-gray-50 dark:border-slate-800 pb-4">
                     <div className="flex items-center gap-3">
-                        <Settings size={22} className="text-blue-500" />
-                        <h2 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tight">Procedure Automation Rules</h2>
+                        <Settings size={20} className="text-[#8e5a7d]" strokeWidth={2.5} />
+                        <h2 className="text-xs font-headline font-bold text-gray-900 dark:text-white uppercase tracking-[0.15em]">Automation Rules</h2>
                     </div>
-                    <button className="text-[10px] font-black text-blue-500 hover:text-blue-600 transition-colors uppercase tracking-widest border-b-2 border-blue-500 pb-1">
-                        Advanced Visual Mapping Tool
+                    <button className="text-[10px] font-black text-[#8e5a7d] hover:text-[#fcb7f0] transition-colors uppercase tracking-widest border-b border-[#8e5a7d] pb-0.5">
+                        Mapping Tool
                     </button>
                 </div>
 
@@ -719,31 +725,30 @@ const AdminPage = ({ tools, prices, operations, rules, onRefresh, actions }: { t
                     {operations.map(op => {
                         const opRules = rules.filter(r => r.operation_id === op.id);
                         return (
-                            <div key={op.id} className="p-6 bg-gray-50/50 dark:bg-slate-900/30 rounded-3xl border border-gray-100 dark:border-slate-800/50 flex flex-col h-full">
-                                <div className="flex items-start justify-between mb-6">
-                                    <div className="space-y-1">
-                                        <h4 className="text-md font-black text-gray-900 dark:text-white uppercase tracking-tight">{op.name}</h4>
-                                        <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest">{op.category}</p>
+                            <div key={op.id} className="p-5 bg-gray-50/50 dark:bg-slate-900/30 rounded-3xl border border-gray-100 dark:border-slate-800/50 flex flex-col h-full hover:bg-white dark:hover:bg-slate-800 hover:shadow-sm transition-all group">
+                                <div className="flex items-start justify-between mb-5">
+                                    <div className="space-y-0.5">
+                                        <h4 className="text-[13px] font-bold text-gray-900 dark:text-white uppercase tracking-tight">{op.name}</h4>
+                                        <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">{op.category}</p>
                                     </div>
-                                    <span className={`text-[8px] font-black px-2.5 py-1 rounded-lg uppercase tracking-tighter ${opRules.length > 0 ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'bg-gray-100 dark:bg-slate-800 text-gray-400 dark:text-slate-500'}`}>
-                                        {opRules.length > 0 ? `${opRules.length} Automated Actions` : 'Manual Selection'}
+                                    <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter ${opRules.length > 0 ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'bg-gray-100 dark:bg-slate-800 text-gray-400 dark:text-slate-500'}`}>
+                                        {opRules.length > 0 ? `${opRules.length} Automated` : 'Manual'}
                                     </span>
                                 </div>
                                 
-                                <div className="flex-1 space-y-4 mb-6">
+                                <div className="flex-1 space-y-4 mb-5">
                                     {opRules.length > 0 && (
-                                        <div className="space-y-2">
-                                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Will Automatically Check:</p>
-                                            <div className="flex flex-wrap gap-1.5">
+                                        <div className="space-y-1.5">
+                                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Will Auto-Check:</p>
+                                            <div className="flex flex-wrap gap-1">
                                                 {opRules.map((rule, rid) => {
                                                     const target = rule.target_type === 'action' 
                                                         ? actions.find(a => a.id === rule.target_id)
                                                         : tools.find(t => t.id === rule.target_id);
                                                     return (
-                                                        <span key={rid} className="px-2.5 py-1 bg-white dark:bg-slate-800 text-[10px] font-bold text-gray-700 dark:text-slate-200 rounded-xl border border-gray-100 dark:border-slate-700 flex items-center gap-1.5 shadow-sm">
+                                                        <span key={rid} className="px-2 py-1 bg-white dark:bg-slate-800 text-[10px] font-bold text-gray-700 dark:text-slate-300 rounded-lg border border-gray-100 dark:border-slate-700 flex items-center gap-1 shadow-sm">
                                                             <CheckCircle size={10} className="text-emerald-500" />
                                                             {target?.item || rule.target_id}
-                                                            {rule.default_selected_value && <span className="text-[8px] text-pink-500 font-black ml-1">→ {rule.default_selected_value}</span>}
                                                         </span>
                                                     );
                                                 })}
@@ -751,11 +756,11 @@ const AdminPage = ({ tools, prices, operations, rules, onRefresh, actions }: { t
                                         </div>
                                     )}
 
-                                    <div className="space-y-2">
-                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Trigger Keywords:</p>
-                                        <div className="flex flex-wrap gap-1.5">
+                                    <div className="space-y-1.5">
+                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Trigger Keywords:</p>
+                                        <div className="flex flex-wrap gap-1">
                                             {op.keywords.map(k => (
-                                                <span key={k} className="px-2 py-0.5 bg-blue-50/50 dark:bg-blue-900/10 text-[9px] font-black text-blue-500/70 dark:text-blue-400/70 rounded-lg border border-blue-100/50 dark:border-blue-900/20 italic">
+                                                <span key={k} className="px-2 py-0.5 bg-gray-100 dark:bg-slate-900 text-[9px] font-bold text-[#8e5a7d] dark:text-brand-primary-dark rounded-md italic">
                                                     #{k}
                                                 </span>
                                             ))}
@@ -763,14 +768,14 @@ const AdminPage = ({ tools, prices, operations, rules, onRefresh, actions }: { t
                                     </div>
                                 </div>
                                 
-                                <button className="w-full py-3 bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-800 text-[10px] font-black text-slate-400 uppercase tracking-widest rounded-2xl hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors shadow-sm">
-                                    Edit Mapping Logic
+                                <button className="w-full py-2 bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-800 text-[9px] font-bold text-gray-400 uppercase tracking-widest rounded-xl hover:text-[#8e5a7d] hover:border-[#fcb7f0] transition-all">
+                                    Edit Mapping
                                 </button>
                             </div>
                         );
                     })}
                 </div>
-            </div>
+            </section>
         </div>
     );
 };
