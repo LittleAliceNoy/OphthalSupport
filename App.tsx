@@ -337,7 +337,10 @@ const PriceListPage = ({ tools, prices, onAdminClick }: { tools: DBTool[], price
         const lowerSearch = searchTerm.toLowerCase();
         
         tools.forEach(tool => {
-            const category = TOOL_CATEGORIES[tool.id] || 'Others';
+            let category = tool.category || TOOL_CATEGORIES[tool.id] || 'Others';
+            if (!TOOL_CATEGORIES_LIST.includes(category)) {
+                category = 'Others';
+            }
             if (!groups[category]) groups[category] = [];
             
             const toolPrices = prices.filter(p => p.tool_id === tool.id);

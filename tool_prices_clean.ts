@@ -4,7 +4,7 @@ export const TOOL_PRICES: any = {
   '15-degree-blade': { name: 'Knife-15 degree (Mani)', CSMBS: 220, SSS: 220, UCS: 220 },
   'slit-knife': { name: 'Slit Knife', CSMBS: 0, SSS: 0, UCS: 0 },
   'crescent-knife': { name: 'Crescent Bevel Up 2.3 mm', CSMBS: 325, SSS: 325, UCS: 325 },
-  'centurion-legion': {
+  'phaco-machine': {
     [MACHINE_TYPES.CENTURION]: { name: 'Centurion Gravity Pack', CSMBS: 2140, SSS: 2140, UCS: 2140 },
     [MACHINE_TYPES.LEGION]: { name: 'Legion FMS Basic Pack', CSMBS: 0, SSS: 0, UCS: 0 },
   },
