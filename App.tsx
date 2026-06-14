@@ -38,6 +38,7 @@ import {
     Option
 } from './constants';
 import { fetchConfig, DBTool, DBAction, DBOperation, DBRule, DBPrice } from './configService';
+import AdminPage from './AdminPage';
 
 // --- Utility Functions ---
 function normalizeText(text: string) {
@@ -78,20 +79,21 @@ function calculateCostAndBreakdown(tools: ChecklistItemData[], healthCoverage: s
             let price = 0;
             let isReused = tool.selectedValue === NEW_REUSED_OPTIONS.REUSED;
             const coverageKey = (healthCoverage.toLowerCase() + '_price') as keyof DBPrice;
+            let priceRow: DBPrice | undefined;
 
             if (tool.id === 'ppv-set') {
                 const tipSize = session.diagnosis.includes("25G") ? "25G" : "23G";
                 const machine = tool.selectedValue; 
                 const subKey = machine ? `${tipSize}_${machine}` : null;
-                const priceRow = prices.find(p => p.tool_id === tool.id && p.sub_key === subKey);
+                priceRow = prices.find(p => p.tool_id === tool.id && p.sub_key === subKey);
                 price = isReused ? 0 : Number(priceRow?.[coverageKey] || 0);
             } else if (tool.type === 'radio' && tool.selectedValue && !isReused) {
                 // For tools like glaucoma-device that have sub-keys in prices
-                const priceRow = prices.find(p => p.tool_id === tool.id && p.sub_key === tool.selectedValue) || 
-                                 prices.find(p => p.tool_id === tool.id && p.sub_key === null);
+                priceRow = prices.find(p => p.tool_id === tool.id && p.sub_key === tool.selectedValue) || 
+                           prices.find(p => p.tool_id === tool.id && p.sub_key === null);
                 price = Number(priceRow?.[coverageKey] || 0);
             } else {
-                const priceRow = prices.find(p => p.tool_id === tool.id && p.sub_key === null);
+                priceRow = prices.find(p => p.tool_id === tool.id && p.sub_key === null);
                 price = isReused ? 0 : Number(priceRow?.[coverageKey] || 0);
             }
 
@@ -101,10 +103,14 @@ function calculateCostAndBreakdown(tools: ChecklistItemData[], healthCoverage: s
             const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
             const gauge = session.diagnosis.includes("25G") ? "25G" : (session.diagnosis.includes("23G") ? "23G" : "");
 
-            if (tool.id === 'ctr-no') displayName = 'Capsular tension ring';
-            else if (tool.id === 'centurion-legion' && tool.selectedValue) displayName = `${capitalize(tool.selectedValue)} machine`;
-            else if (tool.id === 'ppv-set' && tool.selectedValue) displayName = `${gauge} ${capitalize(tool.selectedValue)}`.trim();
-            else if (tool.id === 'soft-tip') displayName = `${gauge} Soft tip`.trim();
+            if (priceRow?.display_name) {
+                displayName = priceRow.display_name;
+            } else {
+                if (tool.id === 'ctr-no') displayName = 'Capsular tension ring';
+                else if (tool.id === 'phaco-machine' && tool.selectedValue) displayName = `${capitalize(tool.selectedValue)} machine`;
+                else if (tool.id === 'ppv-set' && tool.selectedValue) displayName = `${gauge} ${capitalize(tool.selectedValue)}`.trim();
+                else if (tool.id === 'soft-tip') displayName = `${gauge} Soft tip`.trim();
+            }
             
             breakdown.push({ id: tool.id, name: displayName, price, isReused });
         }
@@ -255,10 +261,10 @@ const ChecklistSection = ({ title, items, onItemChange, colorClass, showAllText 
 
 const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }) => {
     const TOOL_CATEGORIES: Record<string, string> = {
-        '15-degree-blade': 'General & Knives',
-        'slit-knife': 'General & Knives',
-        'crescent-knife': 'General & Knives',
-        'centurion-legion': 'Lens Surgery',
+        '15-degree-blade': 'Generals',
+        'slit-knife': 'Generals',
+        'crescent-knife': 'Generals',
+        'phaco-machine': 'Lens Surgery',
         'zeiss-quattro': 'Lens Surgery',
         'basic-phaco-pack': 'Lens Surgery',
         'ctr-no': 'Lens Surgery',
@@ -275,30 +281,105 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
         'soft-tip': 'Retinal Surgery',
         'glaucoma-device': 'Glaucoma',
         'punch-trephine': 'Cornea',
-        '5fu': 'Others',
-        'fibrin-glue': 'Others',
+        '5fu': 'Generals',
+        'fibrin-glue': 'Generals',
     };
 
     const categorizedTools = useMemo(() => {
+        const TOOL_ORDER = [
+            'phaco-machine',
+            'zeiss-quattro',
+            'basic-phaco-pack',
+            'ctr-no',
+            'cts',
+            'iris-retractor',
+            'ppv-set',
+            'bbg',
+            'ilm-forceps',
+            'micro-scissor',
+            'silicone-oil',
+            'silicone-oil-hd',
+            'endolaser',
+            'dk-line',
+            'soft-tip',
+            'glaucoma-device',
+            'punch-trephine',
+            '15-degree-blade',
+            'slit-knife',
+            'crescent-knife',
+            '5fu',
+            'fibrin-glue'
+        ];
+
+        const sortedTools = [...tools].sort((a, b) => {
+            const orderA = typeof a.sort_order === 'number' ? a.sort_order : 0;
+            const orderB = typeof b.sort_order === 'number' ? b.sort_order : 0;
+            if (orderA !== orderB) {
+                return orderA - orderB;
+            }
+            const idxA = TOOL_ORDER.indexOf(a.id);
+            const idxB = TOOL_ORDER.indexOf(b.id);
+            const fIdxA = idxA === -1 ? 999 : idxA;
+            const fIdxB = idxB === -1 ? 999 : idxB;
+            return fIdxA - fIdxB;
+        });
+
         const groups: Record<string, { tool: DBTool, price: DBPrice }[]> = {};
         
-        tools.forEach(tool => {
-            const category = TOOL_CATEGORIES[tool.id] || 'Others';
+        sortedTools.forEach(tool => {
+            let category = tool.category || TOOL_CATEGORIES[tool.id] || 'Generals';
+            if (!['Lens Surgery', 'Retinal Surgery', 'Glaucoma', 'Cornea', 'Generals'].includes(category)) {
+                category = 'Generals';
+            }
             if (!groups[category]) groups[category] = [];
             
             const toolPrices = prices.filter(p => p.tool_id === tool.id);
             
             if (tool.id === 'ppv-set') {
-                // Group by machine name (Constellation, Stellaris)
-                const machineGroups: Record<string, DBPrice> = {};
-                toolPrices.forEach(price => {
-                    const machineName = price.sub_key?.split('_')[1] || price.sub_key || 'Unknown';
-                    if (!machineGroups[machineName]) {
-                        machineGroups[machineName] = price;
+                // Check if 23G and 25G have different prices for each machine
+                const machines = ['Constellation', 'Stellaris'];
+                machines.forEach(machine => {
+                    const price23G = toolPrices.find(p => p.sub_key === `23G_${machine}`);
+                    const price25G = toolPrices.find(p => p.sub_key === `25G_${machine}`);
+                    
+                    if (price23G && price25G) {
+                        const isSamePrice = 
+                            price23G.csmbs_price === price25G.csmbs_price &&
+                            price23G.sss_price === price25G.sss_price &&
+                            price23G.ucs_price === price25G.ucs_price;
+                            
+                        if (isSamePrice) {
+                            groups[category].push({ 
+                                tool, 
+                                price: {
+                                    ...price23G,
+                                    display_name: price23G.display_name && price23G.display_name.startsWith('23G ')
+                                        ? price23G.display_name.replace('23G ', '23G/25G ')
+                                        : (price23G.display_name || `23G/25G ${machine}`)
+                                } 
+                            });
+                        } else {
+                            groups[category].push({ 
+                                tool, 
+                                price: {
+                                    ...price23G,
+                                    display_name: price23G.display_name || `23G ${machine}`
+                                } 
+                            });
+                            groups[category].push({ 
+                                tool, 
+                                price: {
+                                    ...price25G,
+                                    display_name: price25G.display_name || `25G ${machine}`
+                                } 
+                            });
+                        }
+                    } else {
+                        // Fallback: push whatever is available
+                        toolPrices.filter(p => p.sub_key?.endsWith(machine)).forEach(p => {
+                            groups[category].push({ tool, price: p });
+                        });
                     }
-                });
-                Object.values(machineGroups).forEach(price => {
-                    groups[category].push({ tool, price });
                 });
             } else {
                 toolPrices.forEach(price => {
@@ -310,7 +391,7 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
         return groups;
     }, [tools, prices]);
 
-    const categories = ['Lens Surgery', 'Retinal Surgery', 'Glaucoma', 'Cornea', 'General & Knives', 'Others'];
+    const categories = ['Lens Surgery', 'Retinal Surgery', 'Glaucoma', 'Cornea', 'Generals'];
 
     return (
         <section className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-5 transition-colors duration-300">
@@ -335,8 +416,8 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
                                     <thead>
                                         <tr className="text-gray-400 dark:text-slate-500 border-b border-gray-50 dark:border-slate-800/50">
                                             <th className="py-2 px-2 font-bold uppercase tracking-wider w-1/2">Tool / Option</th>
-                                            <th className="py-2 px-2 font-bold uppercase tracking-wider text-right">CSMBS / SSS</th>
-                                            <th className="py-2 px-2 font-bold uppercase tracking-wider text-right">UCS</th>
+                                            <th className="py-2 px-2 font-bold uppercase tracking-wider text-right">CSMBS</th>
+                                            <th className="py-2 px-2 font-bold uppercase tracking-wider text-right">SSS / UCS</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-50 dark:divide-slate-800/30">
@@ -346,6 +427,9 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
                                                     {(() => {
                                                         const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 
+                                                        if (price.display_name) {
+                                                            return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">{price.display_name}</span>;
+                                                        }
                                                         if (tool.id === 'ctr-no') {
                                                             return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">Capsular Tension Ring</span>;
                                                         }
@@ -362,7 +446,7 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
                                                                 </span>
                                                             );
                                                         }
-                                                        if (tool.id === 'centurion-legion' && price.sub_key) {
+                                                        if (tool.id === 'phaco-machine' && price.sub_key) {
                                                             return (
                                                                 <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">
                                                                     {capitalize(price.sub_key)} phaco machine
@@ -483,7 +567,7 @@ export default function App() {
     };
 
     const [session, setSession] = useState<PatientSession>(initialSession);
-    const [currentView, setCurrentView] = useState<'checklist' | 'prices'>('checklist');
+    const [currentView, setCurrentView] = useState<'checklist' | 'prices' | 'admin'>('checklist');
 
     // Logic implementation using config from Supabase
     const calculateAutoChecklistDB = (currentSession: PatientSession) => {
@@ -564,7 +648,7 @@ export default function App() {
 
         // Phaco Machine Logic
         if (normalizedOpText.includes('phaco')) {
-            const machineTool = newTools.find((t: any) => t.id === 'centurion-legion');
+            const machineTool = newTools.find((t: any) => t.id === 'phaco-machine');
             if (machineTool) {
                 machineTool.checked = true;
                 machineTool.autoPopulated = true;
@@ -760,29 +844,28 @@ export default function App() {
                             <Eye size={24} className="text-[#8e5a7d] dark:text-pink-200" />
                             <h1 className="font-headline font-bold text-xl sm:text-2xl text-[#101421] dark:text-white leading-tight">OphthalSupport</h1>
                         </div>
-                        <nav className="hidden sm:flex items-center gap-1">
+                        <nav className="flex items-center gap-1 flex-wrap">
                             <button 
                                 onClick={() => setCurrentView('checklist')}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${currentView === 'checklist' ? 'bg-[#fcb7f0] text-slate-800 shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-800'}`}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${currentView === 'checklist' ? 'bg-[#fcb7f0] text-slate-800 shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-800'}`}
                             >
                                 Checklist
                             </button>
                             <button 
                                 onClick={() => setCurrentView('prices')}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${currentView === 'prices' ? 'bg-[#fcb7f0] text-slate-800 shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-800'}`}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${currentView === 'prices' ? 'bg-[#fcb7f0] text-slate-800 shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-800'}`}
                             >
                                 Tools & Prices
+                            </button>
+                            <button 
+                                onClick={() => setCurrentView('admin')}
+                                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${currentView === 'admin' ? 'bg-[#fcb7f0] text-slate-800 shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-800'}`}
+                            >
+                                <Settings size={13} /> Admin
                             </button>
                         </nav>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button 
-                            onClick={() => setCurrentView(currentView === 'checklist' ? 'prices' : 'checklist')}
-                            className="sm:hidden p-2 rounded-lg bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400"
-                            aria-label="Toggle view"
-                        >
-                            {currentView === 'checklist' ? <Calculator size={18} /> : <ListChecks size={18} />}
-                        </button>
                         <button 
                             onClick={toggleTheme} 
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-0 ${isDarkMode ? 'bg-brand-primary dark:bg-brand-primary-dark' : 'bg-gray-200 dark:bg-slate-700'}`}
@@ -803,6 +886,11 @@ export default function App() {
             <main className="max-w-3xl mx-auto px-3 py-3 sm:px-4 sm:py-6">
                 {currentView === 'prices' ? (
                     <PriceListPage tools={config.tools} prices={config.prices} />
+                ) : currentView === 'admin' ? (
+                    <AdminPage config={config} onRefresh={async () => {
+                        const data = await fetchConfig();
+                        setConfig(data);
+                    }} />
                 ) : (
                     <div className="space-y-4 sm:space-y-6">
                         <div className="space-y-4 sm:space-y-6">

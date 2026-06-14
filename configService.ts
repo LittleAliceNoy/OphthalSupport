@@ -6,6 +6,8 @@ export interface DBTool {
   type: string;
   options: any;
   default_value: any;
+  sort_order?: number;
+  category?: string;
 }
 
 export interface DBAction {
@@ -21,6 +23,7 @@ export interface DBOperation {
 }
 
 export interface DBRule {
+  id: string;
   operation_id: string;
   target_type: 'tool' | 'action';
   target_id: string;
@@ -28,11 +31,13 @@ export interface DBRule {
 }
 
 export interface DBPrice {
+  id: string;
   tool_id: string;
   sub_key: string | null;
   csmbs_price: number;
   sss_price: number;
   ucs_price: number;
+  display_name?: string | null;
 }
 
 export const fetchConfig = async () => {
