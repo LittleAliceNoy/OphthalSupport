@@ -184,6 +184,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
     const [draggedToolId, setDraggedToolId] = useState<string | null>(null);
     const [draggedCategory, setDraggedCategory] = useState<string | null>(null);
     const [dragOverToolId, setDragOverToolId] = useState<string | null>(null);
+    const [dragOverCategory, setDragOverCategory] = useState<string | null>(null);
 
     const filteredPrices = useMemo(() => {
         const filtered = config.prices.filter(p => {
@@ -556,44 +557,100 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
         }
     };
 
-    const handleMoveToolToPosition = async (draggedId: string, targetId: string, category: string) => {
-        const categoryItems = categorizedPrices[category] || [];
-        const uniqueToolIds: string[] = [];
-        categoryItems.forEach(item => {
-            if (!uniqueToolIds.includes(item.tool_id)) {
-                uniqueToolIds.push(item.tool_id);
-            }
-        });
-
-        const fromIndex = uniqueToolIds.indexOf(draggedId);
-        const toIndex = uniqueToolIds.indexOf(targetId);
-        if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
-
-        // Reorder the array
-        const reordered = [...uniqueToolIds];
-        const [moved] = reordered.splice(fromIndex, 1);
-        reordered.splice(toIndex, 0, moved);
-
-        setLoading('Re-ordering tools...');
+    const handleMoveToolToPosition = async (draggedId: string, targetId: string, sourceCategory: string, targetCategory: string) => {
+        setLoading('Moving tool...');
         try {
-            const updates = reordered.map((tid, idx) => ({
-                id: tid,
-                sort_order: (idx + 1) * 10
-            }));
+            if (sourceCategory === targetCategory) {
+                const categoryItems = categorizedPrices[targetCategory] || [];
+                const uniqueToolIds: string[] = [];
+                categoryItems.forEach(item => {
+                    if (!uniqueToolIds.includes(item.tool_id)) {
+                        uniqueToolIds.push(item.tool_id);
+                    }
+                });
 
-            const results = await Promise.all(
-                updates.map(upd => 
-                    supabase
-                        .from('tools')
-                        .update({ sort_order: upd.sort_order })
-                        .eq('id', upd.id)
-                )
-            );
+                const fromIndex = uniqueToolIds.indexOf(draggedId);
+                const toIndex = uniqueToolIds.indexOf(targetId);
+                if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
 
-            const firstErr = results.find(r => r.error)?.error;
-            if (firstErr) throw firstErr;
+                const reordered = [...uniqueToolIds];
+                const [moved] = reordered.splice(fromIndex, 1);
+                reordered.splice(toIndex, 0, moved);
 
-            showToast('Tool order updated successfully', 'success');
+                const updates = reordered.map((tid, idx) => ({
+                    id: tid,
+                    sort_order: (idx + 1) * 10
+                }));
+
+                const results = await Promise.all(
+                    updates.map(upd => 
+                        supabase
+                            .from('tools')
+                            .update({ sort_order: upd.sort_order })
+                            .eq('id', upd.id)
+                    )
+                );
+
+                const firstErr = results.find(r => r.error)?.error;
+                if (firstErr) throw firstErr;
+
+                showToast('Tool order updated successfully', 'success');
+            } else {
+                // Update category in DB
+                const { error: catErr } = await supabase
+                    .from('tools')
+                    .update({ category: targetCategory })
+                    .eq('id', draggedId);
+
+                if (catErr) {
+                    if (catErr.message?.includes('column "category"') || catErr.code === '42703') {
+                        showToast('Run SQL to enable category changes: ALTER TABLE tools ADD COLUMN category VARCHAR;', 'error');
+                        return;
+                    }
+                    throw catErr;
+                }
+
+                // Get target items
+                const targetCategoryItems = categorizedPrices[targetCategory] || [];
+                const uniqueToolIds: string[] = [];
+                targetCategoryItems.forEach(item => {
+                    if (!uniqueToolIds.includes(item.tool_id)) {
+                        uniqueToolIds.push(item.tool_id);
+                    }
+                });
+
+                if (targetId === 'end') {
+                    if (!uniqueToolIds.includes(draggedId)) {
+                        uniqueToolIds.push(draggedId);
+                    }
+                } else {
+                    const toIndex = uniqueToolIds.indexOf(targetId);
+                    if (toIndex !== -1) {
+                        uniqueToolIds.splice(toIndex, 0, draggedId);
+                    } else {
+                        uniqueToolIds.push(draggedId);
+                    }
+                }
+
+                const updates = uniqueToolIds.map((tid, idx) => ({
+                    id: tid,
+                    sort_order: (idx + 1) * 10
+                }));
+
+                const results = await Promise.all(
+                    updates.map(upd => 
+                        supabase
+                            .from('tools')
+                            .update({ sort_order: upd.sort_order })
+                            .eq('id', upd.id)
+                    )
+                );
+
+                const firstErr = results.find(r => r.error)?.error;
+                if (firstErr) throw firstErr;
+
+                showToast(`Tool moved to ${targetCategory} successfully`, 'success');
+            }
             await onRefresh();
         } catch (err: any) {
             if (err.message?.includes('column "sort_order"') || err.code === '42703') {
@@ -1083,13 +1140,81 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                     )}
 
                     {/* Categorized Tables */}
-                    {Object.values(categorizedPrices).some(arr => arr.length > 0) ? (
-                        CATEGORY_ORDER.map(category => {
-                            const items = categorizedPrices[category] || [];
-                            if (items.length === 0) return null;
-
+                    {CATEGORY_ORDER.map(category => {
+                        const items = categorizedPrices[category] || [];
+                        if (items.length === 0) {
+                            if (priceSearch.trim()) return null;
                             return (
-                                <section key={category} className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-5 transition-colors duration-300">
+                                <section
+                                    key={category}
+                                    onDragOver={(e) => {
+                                        if (draggedToolId && draggedCategory !== category) {
+                                            e.preventDefault();
+                                            if (dragOverCategory !== category) {
+                                                setDragOverCategory(category);
+                                            }
+                                        }
+                                    }}
+                                    onDragLeave={() => {
+                                        if (dragOverCategory === category) {
+                                            setDragOverCategory(null);
+                                        }
+                                    }}
+                                    onDrop={async (e) => {
+                                        if (draggedToolId && draggedCategory !== category) {
+                                            e.preventDefault();
+                                            await handleMoveToolToPosition(draggedToolId, 'end', draggedCategory!, category);
+                                        }
+                                        setDragOverCategory(null);
+                                    }}
+                                    className={`bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border p-4 sm:p-5 transition-all duration-300
+                                        ${dragOverCategory === category 
+                                            ? 'border-[#fcb7f0] dark:border-pink-500/50 ring-2 ring-[#fcb7f0]/30 dark:ring-pink-500/20 bg-pink-50/10 dark:bg-pink-950/5' 
+                                            : 'border-gray-100 dark:border-slate-800'
+                                        }
+                                    `}
+                                >
+                                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 px-2 flex items-center gap-2 mb-4 border-b border-gray-50 dark:border-slate-800 pb-2">
+                                        <span className="w-1.5 h-3 bg-[#fcb7f0] rounded-full"></span>
+                                        {category}
+                                    </h3>
+                                    <div className="border border-dashed border-gray-200 dark:border-slate-800/60 rounded-xl p-6 text-center text-xs text-gray-400 dark:text-slate-500 italic bg-gray-50/20 dark:bg-slate-900/10">
+                                        No tools in this category. Drag a tool here to assign it.
+                                    </div>
+                                </section>
+                            );
+                        }
+
+                        return (
+                                <section
+                                    key={category}
+                                    onDragOver={(e) => {
+                                        if (draggedToolId && draggedCategory !== category) {
+                                            e.preventDefault();
+                                            if (dragOverCategory !== category) {
+                                                setDragOverCategory(category);
+                                            }
+                                        }
+                                    }}
+                                    onDragLeave={() => {
+                                        if (dragOverCategory === category) {
+                                            setDragOverCategory(null);
+                                        }
+                                    }}
+                                    onDrop={async (e) => {
+                                        if (draggedToolId && draggedCategory !== category) {
+                                            e.preventDefault();
+                                            await handleMoveToolToPosition(draggedToolId, 'end', draggedCategory!, category);
+                                        }
+                                        setDragOverCategory(null);
+                                    }}
+                                    className={`bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border p-4 sm:p-5 transition-all duration-300
+                                        ${dragOverCategory === category 
+                                            ? 'border-[#fcb7f0] dark:border-pink-500/50 ring-2 ring-[#fcb7f0]/30 dark:ring-pink-500/20 bg-pink-50/10 dark:bg-pink-950/5' 
+                                            : 'border-gray-100 dark:border-slate-800'
+                                        }
+                                    `}
+                                >
                                     <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 px-2 flex items-center gap-2 mb-4 border-b border-gray-50 dark:border-slate-800 pb-2">
                                         <span className="w-1.5 h-3 bg-[#fcb7f0] rounded-full"></span>
                                         {category}
@@ -1124,7 +1249,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                             }}
                                                             onDragOver={(e) => {
                                                                 e.preventDefault();
-                                                                if (draggedToolId && draggedToolId !== price.tool_id && draggedCategory === category) {
+                                                                if (draggedToolId && draggedToolId !== price.tool_id) {
                                                                     if (dragOverToolId !== price.tool_id) {
                                                                         setDragOverToolId(price.tool_id);
                                                                     }
@@ -1132,17 +1257,20 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                             }}
                                                             onDrop={(e) => {
                                                                 e.preventDefault();
-                                                                if (draggedToolId && draggedToolId !== price.tool_id && draggedCategory === category) {
-                                                                    handleMoveToolToPosition(draggedToolId, price.tool_id, category);
+                                                                if (draggedToolId && draggedToolId !== price.tool_id) {
+                                                                    e.stopPropagation();
+                                                                    handleMoveToolToPosition(draggedToolId, price.tool_id, draggedCategory!, category);
                                                                 }
                                                                 setDraggedToolId(null);
                                                                 setDraggedCategory(null);
                                                                 setDragOverToolId(null);
+                                                                setDragOverCategory(null);
                                                             }}
                                                             onDragEnd={() => {
                                                                 setDraggedToolId(null);
                                                                 setDraggedCategory(null);
                                                                 setDragOverToolId(null);
+                                                                setDragOverCategory(null);
                                                             }}
                                                             className={`
                                                                 transition-all duration-200
@@ -1296,7 +1424,9 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                 </section>
                             );
                         })
-                    ) : (
+                    }
+
+                    {priceSearch.trim() && Object.values(categorizedPrices).every(arr => arr.length === 0) && (
                         <div className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-8 text-center text-gray-400 dark:text-slate-500 italic text-xs">
                             No tools found matching search term "{priceSearch}"
                         </div>
