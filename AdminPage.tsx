@@ -14,7 +14,7 @@ import {
     CheckCircle,
     RefreshCw,
     Play,
-    GripVertical
+    Menu
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { DBTool, DBAction, DBOperation, DBRule, DBPrice } from './configService';
@@ -1283,7 +1283,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                                 <div className="flex items-center gap-2">
                                                                     {!isEditing && (
                                                                         isFirstOccurrence ? (
-                                                                            <GripVertical
+                                                                            <Menu
                                                                                 size={14}
                                                                                 className="text-gray-400 dark:text-slate-500 cursor-grab active:cursor-grabbing hover:text-[#fcb7f0] transition-colors shrink-0"
                                                                                 title="Drag to reorder tool"
