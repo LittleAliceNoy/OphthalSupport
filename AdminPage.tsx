@@ -340,6 +340,24 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
         }
     };
 
+    const handleUpdateEditField = (priceId: string, field: string, value: any, price: DBPrice, tool: any) => {
+        setEditPricesData(prev => {
+            const current = prev[priceId] || {
+                displayName: price.display_name || getToolDisplayName(price.tool_id, tool ? tool.item : price.tool_id, price.sub_key),
+                csmbs: price.csmbs_price,
+                sss: price.sss_price,
+                ucs: price.ucs_price
+            };
+            return {
+                ...prev,
+                [priceId]: {
+                    ...current,
+                    [field]: value
+                }
+            };
+        });
+    };
+
     const handleDisplayNameChange = (val: string) => {
         setNewToolDisplayName(val);
         const slug = val
@@ -1152,7 +1170,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                 <section
                                     key={category}
                                     onDragOver={(e) => {
-                                        if (draggedToolId && draggedCategory !== category) {
+                                        if (draggedToolId && draggedCategory !== category && editingCategory === null) {
                                             e.preventDefault();
                                             if (dragOverCategory !== category) {
                                                 setDragOverCategory(category);
@@ -1165,7 +1183,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                         }
                                     }}
                                     onDrop={async (e) => {
-                                        if (draggedToolId && draggedCategory !== category) {
+                                        if (draggedToolId && draggedCategory !== category && editingCategory === null) {
                                             e.preventDefault();
                                             await handleMoveToolToPosition(draggedToolId, 'end', draggedCategory!, category);
                                         }
@@ -1193,7 +1211,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                 <section
                                     key={category}
                                     onDragOver={(e) => {
-                                        if (draggedToolId && draggedCategory !== category) {
+                                        if (draggedToolId && draggedCategory !== category && editingCategory === null) {
                                             e.preventDefault();
                                             if (dragOverCategory !== category) {
                                                 setDragOverCategory(category);
@@ -1206,7 +1224,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                         }
                                     }}
                                     onDrop={async (e) => {
-                                        if (draggedToolId && draggedCategory !== category) {
+                                        if (draggedToolId && draggedCategory !== category && editingCategory === null) {
                                             e.preventDefault();
                                             await handleMoveToolToPosition(draggedToolId, 'end', draggedCategory!, category);
                                         }
@@ -1339,20 +1357,11 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                                             <input
                                                                                 type="text"
                                                                                 value={rowData.displayName}
-                                                                                onChange={e => {
-                                                                                    const val = e.target.value;
-                                                                                    setEditPricesData(prev => ({
-                                                                                        ...prev,
-                                                                                        [price.id]: {
-                                                                                            ...rowData,
-                                                                                            displayName: val
-                                                                                        }
-                                                                                    }));
-                                                                                }}
+                                                                                onChange={e => handleUpdateEditField(price.id, 'displayName', e.target.value, price, tool)}
                                                                                 className="w-full p-1 border border-gray-250 dark:border-slate-700 bg-white dark:bg-slate-850 rounded text-xs font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200"
                                                                                 placeholder="Display Name"
                                                                             />
-                                                                            <span className="text-[9px] text-gray-450 dark:text-slate-500 font-mono pl-1">
+                                                                            <span className="text-[9px] text-gray-455 dark:text-slate-500 font-mono pl-1">
                                                                                 ID: {price.tool_id}
                                                                             </span>
                                                                         </div>
@@ -1382,16 +1391,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                                     <input
                                                                         type="number"
                                                                         value={rowData.csmbs}
-                                                                        onChange={e => {
-                                                                            const val = Number(e.target.value);
-                                                                            setEditPricesData(prev => ({
-                                                                                ...prev,
-                                                                                [price.id]: {
-                                                                                    ...rowData,
-                                                                                    csmbs: val
-                                                                                }
-                                                                            }));
-                                                                        }}
+                                                                        onChange={e => handleUpdateEditField(price.id, 'csmbs', Number(e.target.value), price, tool)}
                                                                         className="w-16 sm:w-20 text-right p-1 border border-gray-205 dark:border-slate-700 bg-white dark:bg-slate-850 rounded text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0]"
                                                                     />
                                                                 ) : (
@@ -1405,16 +1405,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                                     <input
                                                                         type="number"
                                                                         value={rowData.sss}
-                                                                        onChange={e => {
-                                                                            const val = Number(e.target.value);
-                                                                            setEditPricesData(prev => ({
-                                                                                ...prev,
-                                                                                [price.id]: {
-                                                                                    ...rowData,
-                                                                                    sss: val
-                                                                                }
-                                                                            }));
-                                                                        }}
+                                                                        onChange={e => handleUpdateEditField(price.id, 'sss', Number(e.target.value), price, tool)}
                                                                         className="w-16 sm:w-20 text-right p-1 border border-gray-205 dark:border-slate-700 bg-white dark:bg-slate-850 rounded text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0]"
                                                                     />
                                                                 ) : (
@@ -1428,16 +1419,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                                     <input
                                                                         type="number"
                                                                         value={rowData.ucs}
-                                                                        onChange={e => {
-                                                                            const val = Number(e.target.value);
-                                                                            setEditPricesData(prev => ({
-                                                                                ...prev,
-                                                                                [price.id]: {
-                                                                                    ...rowData,
-                                                                                    ucs: val
-                                                                                }
-                                                                            }));
-                                                                        }}
+                                                                        onChange={e => handleUpdateEditField(price.id, 'ucs', Number(e.target.value), price, tool)}
                                                                         className="w-16 sm:w-20 text-right p-1 border border-gray-205 dark:border-slate-700 bg-white dark:bg-slate-850 rounded text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0]"
                                                                     />
                                                                 ) : (
@@ -1450,13 +1432,14 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                                 <div className="flex items-center justify-center gap-1.5">
                                                                     <select
                                                                         value="move"
+                                                                        disabled={editingCategory !== null || loading !== null}
                                                                         onChange={async (e) => {
                                                                             const newCat = e.target.value;
                                                                             if (newCat !== "move") {
                                                                                 await handleMoveToolToPosition(price.tool_id, 'end', category, newCat);
                                                                             }
                                                                         }}
-                                                                        className="px-2 py-1 bg-gray-50 hover:bg-gray-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-655 dark:text-slate-300 rounded text-[10px] font-bold transition-all border border-gray-200 dark:border-slate-700 cursor-pointer outline-none focus:ring-1 focus:ring-[#fcb7f0]"
+                                                                        className="px-2 py-1 bg-gray-50 hover:bg-gray-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-655 dark:text-slate-300 rounded text-[10px] font-bold transition-all border border-gray-200 dark:border-slate-700 cursor-pointer outline-none focus:ring-1 focus:ring-[#fcb7f0] disabled:opacity-50"
                                                                     >
                                                                         <option value="move" disabled hidden>Move</option>
                                                                         {CATEGORY_ORDER.map(cat => (
@@ -1467,7 +1450,8 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                                     </select>
                                                                     <button
                                                                         onClick={() => handleDeleteTool(price.tool_id)}
-                                                                        className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded transition-colors"
+                                                                        disabled={editingCategory !== null || loading !== null}
+                                                                        className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
                                                                         title="Delete Tool"
                                                                     >
                                                                         <Trash2 size={13} />
