@@ -124,12 +124,13 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
 
     // --- Prices State & Logic ---
     const [priceSearch, setPriceSearch] = useState('');
-    const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
-    const [editCsmbs, setEditCsmbs] = useState<number>(0);
-    const [editSss, setEditSss] = useState<number>(0);
-    const [editUcs, setEditUcs] = useState<number>(0);
-    const [editToolName, setEditToolName] = useState('');
-    const [editToolCategory, setEditToolCategory] = useState<string>('Generals');
+    const [editingCategory, setEditingCategory] = useState<string | null>(null);
+    const [editPricesData, setEditPricesData] = useState<Record<string, {
+        displayName: string;
+        csmbs: number;
+        sss: number;
+        ucs: number;
+    }>>({});
 
     // Add Tool Form States
     const [showAddToolForm, setShowAddToolForm] = useState(false);
@@ -244,89 +245,92 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
         return groups;
     }, [filteredPrices, config.tools]);
 
-    const handleEditPrice = (price: DBPrice) => {
-        setEditingPriceId(price.id);
-        setEditCsmbs(price.csmbs_price);
-        setEditSss(price.sss_price);
-        setEditUcs(price.ucs_price);
-        const tool = config.tools.find(t => t.id === price.tool_id);
-        const dispName = price.display_name || getToolDisplayName(price.tool_id, tool ? tool.item : price.tool_id, price.sub_key);
-        setEditToolName(dispName);
-        setEditToolCategory(tool?.category || TOOL_CATEGORIES[price.tool_id] || 'Generals');
+    const handleStartEditCategory = (cat: string) => {
+        setEditingCategory(cat);
+        const categoryItems = categorizedPrices[cat] || [];
+        const initialData: Record<string, {
+            displayName: string;
+            csmbs: number;
+            sss: number;
+            ucs: number;
+        }> = {};
+        categoryItems.forEach(price => {
+            const tool = config.tools.find(t => t.id === price.tool_id);
+            const dispName = price.display_name || getToolDisplayName(price.tool_id, tool ? tool.item : price.tool_id, price.sub_key);
+            initialData[price.id] = {
+                displayName: dispName,
+                csmbs: price.csmbs_price,
+                sss: price.sss_price,
+                ucs: price.ucs_price
+            };
+        });
+        setEditPricesData(initialData);
     };
 
-    const handleSavePrice = async (price: DBPrice) => {
-        if (editCsmbs < 0 || editSss < 0 || editUcs < 0) {
-            showToast('Prices must be non-negative numbers', 'error');
-            return;
-        }
-        if (!editToolName.trim()) {
-            showToast('Tool name is required', 'error');
-            return;
-        }
-        setLoading('Saving details...');
-        try {
-            // 1. Try to update the price row in tool_prices including display_name
-            const { error: priceErr } = await supabase
-                .from('tool_prices')
-                .update({
-                    csmbs_price: Number(editCsmbs),
-                    sss_price: Number(editSss),
-                    ucs_price: Number(editUcs),
-                    display_name: editToolName.trim()
-                })
-                .eq('id', price.id);
-            
-            if (priceErr) throw priceErr;
-
-            // 2. Try to update the category in tools table
-            const { error: toolErr } = await supabase
-                .from('tools')
-                .update({
-                    category: editToolCategory
-                })
-                .eq('id', price.tool_id);
-
-            if (toolErr) {
-                if (toolErr.message?.includes('column "category"') || toolErr.code === '42703') {
-                    showToast('Prices updated! Run SQL to enable category changes: ALTER TABLE tools ADD COLUMN category VARCHAR;', 'error');
-                } else {
-                    throw toolErr;
-                }
-            } else {
-                showToast('Tool details, prices, and category updated successfully', 'success');
+    const handleSaveCategoryPrices = async (cat: string) => {
+        const items = categorizedPrices[cat] || [];
+        // validate
+        for (const item of items) {
+            const data = editPricesData[item.id];
+            if (!data) continue;
+            if (data.csmbs < 0 || data.sss < 0 || data.ucs < 0) {
+                showToast('Prices must be non-negative numbers', 'error');
+                return;
             }
-            
-            setEditingPriceId(null);
+            if (!data.displayName.trim()) {
+                showToast('Tool name is required', 'error');
+                return;
+            }
+        }
+
+        setLoading('Saving category prices...');
+        try {
+            const updates = items.map(item => {
+                const data = editPricesData[item.id];
+                if (!data) return Promise.resolve({ error: null });
+                return supabase
+                    .from('tool_prices')
+                    .update({
+                        csmbs_price: Number(data.csmbs),
+                        sss_price: Number(data.sss),
+                        ucs_price: Number(data.ucs),
+                        display_name: data.displayName.trim()
+                    })
+                    .eq('id', item.id);
+            });
+
+            const results = await Promise.all(updates);
+            const firstErr = results.find(r => r.error)?.error;
+            if (firstErr) throw firstErr;
+
+            showToast(`All prices in "${cat}" updated successfully`, 'success');
+            setEditingCategory(null);
             await onRefresh();
         } catch (err: any) {
             if (err.message?.includes('column "display_name"') || err.code === '42703') {
-                // Fallback: update prices without display_name, and alert the user to run SQL
-                const { error: fallbackErr } = await supabase
-                    .from('tool_prices')
-                    .update({
-                        csmbs_price: Number(editCsmbs),
-                        sss_price: Number(editSss),
-                        ucs_price: Number(editUcs)
-                    })
-                    .eq('id', price.id);
-                
-                if (fallbackErr) throw fallbackErr;
-                
-                // Try category too
-                const { error: toolErr } = await supabase
-                    .from('tools')
-                    .update({
-                        category: editToolCategory
-                    })
-                    .eq('id', price.tool_id);
+                // Fallback: update without display_name
+                try {
+                    const fallbackUpdates = items.map(item => {
+                        const data = editPricesData[item.id];
+                        if (!data) return Promise.resolve({ error: null });
+                        return supabase
+                            .from('tool_prices')
+                            .update({
+                                csmbs_price: Number(data.csmbs),
+                                sss_price: Number(data.sss),
+                                ucs_price: Number(data.ucs)
+                            })
+                            .eq('id', item.id);
+                    });
+                    const fallbackResults = await Promise.all(fallbackUpdates);
+                    const firstFallbackErr = fallbackResults.find(r => r.error)?.error;
+                    if (firstFallbackErr) throw firstFallbackErr;
 
-                if (toolErr && (toolErr.message?.includes('column "category"') || toolErr.code === '42703')) {
-                    showToast('Prices updated! Run SQL to enable category/name changes: ALTER TABLE tools ADD COLUMN category VARCHAR; ALTER TABLE tool_prices ADD COLUMN display_name VARCHAR;', 'error');
-                } else if (toolErr) {
-                    throw toolErr;
-                } else {
-                    showToast('Prices and category updated! Enable name editing by running SQL: ALTER TABLE tool_prices ADD COLUMN display_name VARCHAR;', 'error');
+                    showToast(`Prices in "${cat}" updated! Run SQL to enable name changes: ALTER TABLE tool_prices ADD COLUMN display_name VARCHAR;`, 'error');
+                    setEditingCategory(null);
+                    await onRefresh();
+                } catch (fallbackErr: any) {
+                    showToast(fallbackErr.message || 'Error updating prices', 'error');
                 }
             } else {
                 showToast(err.message || 'Error updating details', 'error');
@@ -1215,10 +1219,42 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                         }
                                     `}
                                 >
-                                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 px-2 flex items-center gap-2 mb-4 border-b border-gray-50 dark:border-slate-800 pb-2">
-                                        <span className="w-1.5 h-3 bg-[#fcb7f0] rounded-full"></span>
-                                        {category}
-                                    </h3>
+                                    <div className="flex justify-between items-center mb-4 border-b border-gray-50 dark:border-slate-800 pb-2">
+                                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 px-2 flex items-center gap-2">
+                                            <span className="w-1.5 h-3 bg-[#fcb7f0] rounded-full"></span>
+                                            {category}
+                                        </h3>
+                                        <div className="flex items-center gap-2">
+                                            {editingCategory === category ? (
+                                                <>
+                                                    <button
+                                                        onClick={() => handleSaveCategoryPrices(category)}
+                                                        disabled={loading !== null}
+                                                        className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded text-[10px] font-bold transition-all flex items-center gap-1 shadow-sm disabled:opacity-50"
+                                                    >
+                                                        <Save size={12} />
+                                                        Save All
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setEditingCategory(null)}
+                                                        disabled={loading !== null}
+                                                        className="px-2.5 py-1 bg-gray-400 hover:bg-gray-500 text-white rounded text-[10px] font-bold transition-all flex items-center gap-1 shadow-sm disabled:opacity-50"
+                                                    >
+                                                        <X size={12} />
+                                                        Cancel
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleStartEditCategory(category)}
+                                                    disabled={editingCategory !== null || loading !== null}
+                                                    className="px-2.5 py-1 bg-[#fcb7f0]/20 hover:bg-[#fcb7f0]/40 text-[#8e5a7d] dark:text-[#fcb7f0] rounded text-[10px] font-bold transition-all border border-[#fcb7f0]/30 disabled:opacity-50"
+                                                >
+                                                    Edit Prices
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
 
                                     <div className="overflow-x-auto">
                                         <table className="w-full text-left text-[11px] sm:text-xs">
@@ -1235,13 +1271,19 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                             <tbody className="divide-y divide-gray-50 dark:divide-slate-800/30">
                                                 {items.map((price, idx) => {
                                                     const tool = config.tools.find(t => t.id === price.tool_id);
-                                                    const isEditing = editingPriceId === price.id;
+                                                    const isEditing = editingCategory === category;
                                                     const isFirstOccurrence = items.findIndex(item => item.tool_id === price.tool_id) === idx;
+                                                    const rowData = editPricesData[price.id] || {
+                                                        displayName: price.display_name || getToolDisplayName(price.tool_id, tool ? tool.item : price.tool_id, price.sub_key),
+                                                        csmbs: price.csmbs_price,
+                                                        sss: price.sss_price,
+                                                        ucs: price.ucs_price
+                                                    };
 
                                                     return (
                                                         <tr
                                                             key={price.id}
-                                                            draggable={!editingPriceId}
+                                                            draggable={editingCategory === null}
                                                             onDragStart={(e) => {
                                                                 setDraggedToolId(price.tool_id);
                                                                 setDraggedCategory(category);
@@ -1296,25 +1338,23 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                                         <div className="flex flex-col gap-1.5 w-full">
                                                                             <input
                                                                                 type="text"
-                                                                                value={editToolName}
-                                                                                onChange={e => setEditToolName(e.target.value)}
+                                                                                value={rowData.displayName}
+                                                                                onChange={e => {
+                                                                                    const val = e.target.value;
+                                                                                    setEditPricesData(prev => ({
+                                                                                        ...prev,
+                                                                                        [price.id]: {
+                                                                                            ...rowData,
+                                                                                            displayName: val
+                                                                                        }
+                                                                                    }));
+                                                                                }}
                                                                                 className="w-full p-1 border border-gray-250 dark:border-slate-700 bg-white dark:bg-slate-850 rounded text-xs font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200"
                                                                                 placeholder="Display Name"
                                                                             />
-                                                                            <div className="flex items-center gap-2">
-                                                                                <select
-                                                                                    value={editToolCategory}
-                                                                                    onChange={e => setEditToolCategory(e.target.value)}
-                                                                                    className="p-1 border border-gray-250 dark:border-slate-700 bg-white dark:bg-slate-850 rounded text-[10px] font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200"
-                                                                                >
-                                                                                    {CATEGORY_ORDER.map(cat => (
-                                                                                        <option key={cat} value={cat}>{cat}</option>
-                                                                                    ))}
-                                                                                </select>
-                                                                                <span className="text-[9px] text-gray-450 dark:text-slate-500 font-mono">
-                                                                                    ID: {price.tool_id}
-                                                                                </span>
-                                                                            </div>
+                                                                            <span className="text-[9px] text-gray-450 dark:text-slate-500 font-mono pl-1">
+                                                                                ID: {price.tool_id}
+                                                                            </span>
                                                                         </div>
                                                                     ) : (
                                                                         <div className="flex flex-col">
@@ -1341,8 +1381,17 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                                 {isEditing ? (
                                                                     <input
                                                                         type="number"
-                                                                        value={editCsmbs}
-                                                                        onChange={e => setEditCsmbs(Number(e.target.value))}
+                                                                        value={rowData.csmbs}
+                                                                        onChange={e => {
+                                                                            const val = Number(e.target.value);
+                                                                            setEditPricesData(prev => ({
+                                                                                ...prev,
+                                                                                [price.id]: {
+                                                                                    ...rowData,
+                                                                                    csmbs: val
+                                                                                }
+                                                                            }));
+                                                                        }}
                                                                         className="w-16 sm:w-20 text-right p-1 border border-gray-205 dark:border-slate-700 bg-white dark:bg-slate-850 rounded text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0]"
                                                                     />
                                                                 ) : (
@@ -1355,8 +1404,17 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                                 {isEditing ? (
                                                                     <input
                                                                         type="number"
-                                                                        value={editSss}
-                                                                        onChange={e => setEditSss(Number(e.target.value))}
+                                                                        value={rowData.sss}
+                                                                        onChange={e => {
+                                                                            const val = Number(e.target.value);
+                                                                            setEditPricesData(prev => ({
+                                                                                ...prev,
+                                                                                [price.id]: {
+                                                                                    ...rowData,
+                                                                                    sss: val
+                                                                                }
+                                                                            }));
+                                                                        }}
                                                                         className="w-16 sm:w-20 text-right p-1 border border-gray-205 dark:border-slate-700 bg-white dark:bg-slate-850 rounded text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0]"
                                                                     />
                                                                 ) : (
@@ -1369,8 +1427,17 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                                 {isEditing ? (
                                                                     <input
                                                                         type="number"
-                                                                        value={editUcs}
-                                                                        onChange={e => setEditUcs(Number(e.target.value))}
+                                                                        value={rowData.ucs}
+                                                                        onChange={e => {
+                                                                            const val = Number(e.target.value);
+                                                                            setEditPricesData(prev => ({
+                                                                                ...prev,
+                                                                                [price.id]: {
+                                                                                    ...rowData,
+                                                                                    ucs: val
+                                                                                }
+                                                                            }));
+                                                                        }}
                                                                         className="w-16 sm:w-20 text-right p-1 border border-gray-205 dark:border-slate-700 bg-white dark:bg-slate-850 rounded text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0]"
                                                                     />
                                                                 ) : (
@@ -1380,40 +1447,32 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                                 )}
                                                             </td>
                                                             <td className="py-3 px-2 text-center">
-                                                                {isEditing ? (
-                                                                    <div className="flex items-center justify-center gap-1">
-                                                                        <button
-                                                                            onClick={() => handleSavePrice(price)}
-                                                                            className="p-1 rounded bg-emerald-500 hover:bg-emerald-600 text-white transition-colors"
-                                                                            title="Save"
-                                                                        >
-                                                                            <Save size={12} />
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={() => setEditingPriceId(null)}
-                                                                            className="p-1 rounded bg-gray-400 hover:bg-gray-500 text-white transition-colors"
-                                                                            title="Cancel"
-                                                                        >
-                                                                            <X size={12} />
-                                                                        </button>
-                                                                    </div>
-                                                                ) : (
-                                                                    <div className="flex items-center justify-center gap-1.5">
-                                                                        <button
-                                                                            onClick={() => handleEditPrice(price)}
-                                                                            className="px-2 py-1 bg-[#fcb7f0]/20 hover:bg-[#fcb7f0]/40 text-[#8e5a7d] dark:text-[#fcb7f0] rounded text-[10px] font-bold transition-all border border-[#fcb7f0]/30"
-                                                                        >
-                                                                            Edit
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={() => handleDeleteTool(price.tool_id)}
-                                                                            className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded transition-colors"
-                                                                            title="Delete Tool"
-                                                                        >
-                                                                            <Trash2 size={13} />
-                                                                        </button>
-                                                                    </div>
-                                                                )}
+                                                                <div className="flex items-center justify-center gap-1.5">
+                                                                    <select
+                                                                        value="move"
+                                                                        onChange={async (e) => {
+                                                                            const newCat = e.target.value;
+                                                                            if (newCat !== "move") {
+                                                                                await handleMoveToolToPosition(price.tool_id, 'end', category, newCat);
+                                                                            }
+                                                                        }}
+                                                                        className="px-2 py-1 bg-gray-50 hover:bg-gray-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-655 dark:text-slate-300 rounded text-[10px] font-bold transition-all border border-gray-200 dark:border-slate-700 cursor-pointer outline-none focus:ring-1 focus:ring-[#fcb7f0]"
+                                                                    >
+                                                                        <option value="move" disabled hidden>Move</option>
+                                                                        {CATEGORY_ORDER.map(cat => (
+                                                                            <option key={cat} value={cat} disabled={cat === category}>
+                                                                                {cat}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                    <button
+                                                                        onClick={() => handleDeleteTool(price.tool_id)}
+                                                                        className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded transition-colors"
+                                                                        title="Delete Tool"
+                                                                    >
+                                                                        <Trash2 size={13} />
+                                                                    </button>
+                                                                </div>
                                                             </td>
                                                         </tr>
                                                     );
