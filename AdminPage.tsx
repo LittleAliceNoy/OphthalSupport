@@ -1380,7 +1380,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                             </td>
                                                             <td className="py-3 px-2">
                                                                 {price.sub_key ? (
-                                                                    <span className="text-[9px] uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                                                    <span className="text-[9px] uppercase tracking-wider text-gray-500 dark:text-slate-400 font-semibold bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
                                                                         {price.sub_key}
                                                                     </span>
                                                                 ) : (

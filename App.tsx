@@ -471,7 +471,7 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
                                                             <>
                                                                 <span className="font-bold text-gray-900 dark:text-slate-200">{tool.item}</span>
                                                                 {price.sub_key && (
-                                                                    <span className="ml-2 text-[10px] text-gray-500 dark:text-slate-400 font-medium bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded uppercase">{price.sub_key}</span>
+                                                                    <span className="ml-2 text-[10px] text-gray-500 dark:text-slate-400 font-medium bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded-full uppercase">{price.sub_key}</span>
                                                                 )}
                                                             </>
                                                         );
