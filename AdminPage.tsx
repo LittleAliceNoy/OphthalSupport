@@ -1197,10 +1197,12 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                         }
                                     `}
                                 >
-                                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 px-2 flex items-center gap-2 mb-4 border-b border-gray-50 dark:border-slate-800 pb-2">
-                                        <span className="w-1.5 h-3 bg-[#fcb7f0] rounded-full"></span>
-                                        {category}
-                                    </h3>
+                                    <div className="flex justify-between items-center -mx-4 sm:-mx-5 -mt-4 sm:-mt-5 mb-4 px-4 sm:px-5 py-3 border-b border-gray-100 dark:border-slate-800 bg-gray-50/40 dark:bg-slate-800/20 rounded-t-2xl">
+                                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 flex items-center gap-2">
+                                            <span className="w-1.5 h-3 bg-[#fcb7f0] rounded-full"></span>
+                                            {category}
+                                        </h3>
+                                    </div>
                                     <div className="border border-dashed border-gray-200 dark:border-slate-800/60 rounded-xl p-6 text-center text-xs text-gray-400 dark:text-slate-500 italic bg-gray-50/20 dark:bg-slate-900/10">
                                         No tools in this category. Drag a tool here to assign it.
                                     </div>
@@ -1238,8 +1240,8 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                         }
                                     `}
                                 >
-                                    <div className="flex justify-between items-center mb-4 border-b border-gray-50 dark:border-slate-800 pb-2">
-                                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 px-2 flex items-center gap-2">
+                                    <div className="flex justify-between items-center -mx-4 sm:-mx-5 -mt-4 sm:-mt-5 mb-4 px-4 sm:px-5 py-3 border-b border-gray-100 dark:border-slate-800 bg-gray-50/40 dark:bg-slate-800/20 rounded-t-2xl">
+                                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 flex items-center gap-2">
                                             <span className="w-1.5 h-3 bg-[#fcb7f0] rounded-full"></span>
                                             {category}
                                         </h3>
