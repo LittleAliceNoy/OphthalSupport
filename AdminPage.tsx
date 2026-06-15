@@ -1249,18 +1249,18 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                     <button
                                                         onClick={() => handleSaveCategoryPrices(category)}
                                                         disabled={loading !== null}
-                                                        className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded text-[10px] font-bold transition-all flex items-center gap-1 shadow-sm disabled:opacity-50"
+                                                        className="p-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded transition-all flex items-center justify-center shadow-sm disabled:opacity-50"
+                                                        title="Save All"
                                                     >
                                                         <Save size={12} />
-                                                        Save All
                                                     </button>
                                                     <button
                                                         onClick={() => setEditingCategory(null)}
                                                         disabled={loading !== null}
-                                                        className="px-2.5 py-1 bg-gray-400 hover:bg-gray-500 text-white rounded text-[10px] font-bold transition-all flex items-center gap-1 shadow-sm disabled:opacity-50"
+                                                        className="p-1.5 bg-gray-400 hover:bg-gray-500 text-white rounded transition-all flex items-center justify-center shadow-sm disabled:opacity-50"
+                                                        title="Cancel"
                                                     >
                                                         <X size={12} />
-                                                        Cancel
                                                     </button>
                                                 </>
                                             ) : (
@@ -1269,7 +1269,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                     disabled={editingCategory !== null || loading !== null}
                                                     className="px-2.5 py-1 bg-[#fcb7f0]/20 hover:bg-[#fcb7f0]/40 text-[#8e5a7d] dark:text-[#fcb7f0] rounded text-[10px] font-bold transition-all border border-[#fcb7f0]/30 disabled:opacity-50"
                                                 >
-                                                    Edit Prices
+                                                    Edit
                                                 </button>
                                             )}
                                         </div>
