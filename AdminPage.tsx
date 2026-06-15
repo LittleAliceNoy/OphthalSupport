@@ -14,7 +14,8 @@ import {
     CheckCircle,
     RefreshCw,
     Play,
-    Menu
+    Menu,
+    FolderSymlink
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { DBTool, DBAction, DBOperation, DBRule, DBPrice } from './configService';
@@ -1430,24 +1431,34 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                             </td>
                                                             <td className="py-3 px-2 text-center">
                                                                 <div className="flex items-center justify-center gap-1.5">
-                                                                    <select
-                                                                        value="move"
-                                                                        disabled={editingCategory !== null || loading !== null}
-                                                                        onChange={async (e) => {
-                                                                            const newCat = e.target.value;
-                                                                            if (newCat !== "move") {
-                                                                                await handleMoveToolToPosition(price.tool_id, 'end', category, newCat);
-                                                                            }
-                                                                        }}
-                                                                        className="px-2 py-1 bg-gray-50 hover:bg-gray-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-655 dark:text-slate-300 rounded text-[10px] font-bold transition-all border border-gray-200 dark:border-slate-700 cursor-pointer outline-none focus:ring-1 focus:ring-[#fcb7f0] disabled:opacity-50"
+                                                                    <div 
+                                                                        className={`relative p-1 text-[#8e5a7d] hover:text-[#734464] hover:bg-[#fcb7f0]/10 dark:text-[#fcb7f0] dark:hover:text-[#f78de3] dark:hover:bg-[#fcb7f0]/5 rounded transition-all flex items-center justify-center ${
+                                                                            (editingCategory !== null || loading !== null)
+                                                                                ? 'opacity-50 cursor-not-allowed'
+                                                                                : 'cursor-pointer'
+                                                                        }`}
+                                                                        title="Move Category"
                                                                     >
-                                                                        <option value="move" disabled hidden>Move</option>
-                                                                        {CATEGORY_ORDER.map(cat => (
-                                                                            <option key={cat} value={cat} disabled={cat === category}>
-                                                                                {cat}
-                                                                            </option>
-                                                                        ))}
-                                                                    </select>
+                                                                        <FolderSymlink size={13} />
+                                                                        <select
+                                                                            value="move"
+                                                                            disabled={editingCategory !== null || loading !== null}
+                                                                            onChange={async (e) => {
+                                                                                const newCat = e.target.value;
+                                                                                if (newCat !== "move") {
+                                                                                    await handleMoveToolToPosition(price.tool_id, 'end', category, newCat);
+                                                                                }
+                                                                            }}
+                                                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                                                                        >
+                                                                            <option value="move" disabled hidden>Move</option>
+                                                                            {CATEGORY_ORDER.map(cat => (
+                                                                                <option key={cat} value={cat} disabled={cat === category}>
+                                                                                    {cat}
+                                                                                </option>
+                                                                            ))}
+                                                                        </select>
+                                                                    </div>
                                                                     <button
                                                                         onClick={() => handleDeleteTool(price.tool_id)}
                                                                         disabled={editingCategory !== null || loading !== null}
