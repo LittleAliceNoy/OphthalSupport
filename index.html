@@ -38,6 +38,15 @@
       body {
         transition: background-color 0.3s ease, color 0.3s ease;
       }
+      /* Hide scrollbar for Chrome, Safari and Opera */
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      /* Hide scrollbar for IE, Edge and Firefox */
+      .no-scrollbar {
+        -ms-overflow-style: none;  /* IE and Edge */
+        scrollbar-width: none;  /* Firefox */
+      }
     </style>
   <script type="importmap">
 {

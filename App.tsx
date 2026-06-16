@@ -452,7 +452,7 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
             {/* Filter and search controls above the card */}
             <div className="flex flex-row items-center justify-between gap-2 w-full flex-wrap sm:flex-nowrap">
                 {/* Category Filter Tabs styled as floating buttons */}
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-row flex-nowrap overflow-x-auto no-scrollbar gap-1 max-w-full select-none py-0.5 shrink-0">
                     {['All', ...categories].map(cat => {
                         const isSelected = selectedCategory === cat;
                         const labelMap: Record<string, string> = {
@@ -493,72 +493,70 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
                 </div>
             </div>
 
-            {/* Tool & Prices Card */}
-            <section className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-5 transition-colors duration-300">
-                <div className="flex items-center gap-2 mb-6 border-b border-gray-50 dark:border-slate-800 pb-3">
-                    <Tag size={18} className="text-[#8e5a7d] dark:text-brand-primary-dark" strokeWidth={2.5} />
-                    <h2 className="text-sm font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide">Tools & Prices</h2>
-                </div>
-                
-                <div className="space-y-8">
-                    {Object.keys(filteredGroups).length === 0 ? (
-                        <div className="py-8 text-center text-gray-400 dark:text-slate-500 italic text-xs">
-                            No tools found matching search term "{searchTerm}"
-                        </div>
-                    ) : (
-                        categories.map(category => {
-                            const items = filteredGroups[category];
-                            if (!items || items.length === 0) return null;
+            {/* Categorized Cards layout */}
+            <div className="space-y-6">
+                {Object.keys(filteredGroups).length === 0 ? (
+                    <div className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-8 text-center text-gray-400 dark:text-slate-500 italic text-xs">
+                        No tools found matching search term "{searchTerm}"
+                    </div>
+                ) : (
+                    categories.map(category => {
+                        const items = filteredGroups[category];
+                        if (!items || items.length === 0) return null;
 
-                            return (
-                                <div key={category} className="space-y-3">
-                                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 px-2 flex items-center gap-2">
-                                        <span className="w-1 h-3 bg-[#fcb7f0] rounded-full"></span>
+                        return (
+                            <section 
+                                key={category} 
+                                className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-5 transition-colors duration-300"
+                            >
+                                <div className="flex justify-between items-center -mx-4 sm:-mx-5 -mt-4 sm:-mt-5 mb-4 px-4 sm:px-5 py-3 border-b border-gray-100 dark:border-slate-800 bg-gray-50/40 dark:bg-slate-800/20 rounded-t-2xl">
+                                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 flex items-center gap-2">
+                                        <span className="w-1.5 h-3 bg-[#fcb7f0] rounded-full"></span>
                                         {(() => {
                                             if (category.toLowerCase().includes('surgery')) return category;
                                             if (category === 'Generals') return 'General Surgery';
                                             return `${category} Surgery`;
                                         })()}
                                     </h3>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-left text-[11px] sm:text-xs">
-                                            <thead>
-                                                <tr className="text-gray-400 dark:text-slate-500 border-b border-gray-50 dark:border-slate-800/50">
-                                                    <th className="py-2 px-2 font-bold uppercase tracking-wider w-1/2">Tool / Option</th>
-                                                    <th className="py-2 px-2 font-bold uppercase tracking-wider text-right">CSMBS</th>
-                                                    <th className="py-2 px-2 font-bold uppercase tracking-wider text-right">SSS / UCS</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-50 dark:divide-slate-800/30">
-                                                {items.map(({ tool, price }, idx) => (
-                                                    <tr key={`${tool.id}-${price.sub_key || 'default'}-${idx}`} className="hover:bg-gray-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                                                        <td className="py-2.5 px-2">
-                                                            <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">
-                                                                {getRowDisplayName(tool, price)}
-                                                            </span>
-                                                            {tool.id !== 'glaucoma-device' && tool.id !== 'phaco-machine' && tool.id !== 'ppv-set' && price.sub_key && (
-                                                                <span className="ml-2 text-[10px] text-gray-500 dark:text-slate-400 font-medium bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded-full uppercase">
-                                                                    {price.sub_key}
-                                                                </span>
-                                                            )}
-                                                        </td>
-                                                        <td className="py-2.5 px-2 text-right font-mono font-bold text-gray-900 dark:text-slate-200 whitespace-nowrap">
-                                                            ฿{price.csmbs_price.toLocaleString()}
-                                                        </td>
-                                                        <td className="py-2.5 px-2 text-right font-mono font-bold text-gray-900 dark:text-slate-200 whitespace-nowrap">
-                                                            ฿{price.ucs_price.toLocaleString()}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
                                 </div>
-                            );
-                        })
-                    )}
-                </div>
-            </section>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-[11px] sm:text-xs">
+                                        <thead>
+                                            <tr className="text-gray-400 dark:text-slate-500 border-b border-gray-50 dark:border-slate-800/50">
+                                                <th className="py-2 px-2 font-bold uppercase tracking-wider w-1/2">Tool / Option</th>
+                                                <th className="py-2 px-2 font-bold uppercase tracking-wider text-right">CSMBS</th>
+                                                <th className="py-2 px-2 font-bold uppercase tracking-wider text-right">SSS / UCS</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-50 dark:divide-slate-800/30">
+                                            {items.map(({ tool, price }, idx) => (
+                                                <tr key={`${tool.id}-${price.sub_key || 'default'}-${idx}`} className="hover:bg-gray-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                                                    <td className="py-2.5 px-2">
+                                                        <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">
+                                                            {getRowDisplayName(tool, price)}
+                                                        </span>
+                                                        {tool.id !== 'glaucoma-device' && tool.id !== 'phaco-machine' && tool.id !== 'ppv-set' && price.sub_key && (
+                                                            <span className="ml-2 text-[10px] text-gray-500 dark:text-slate-400 font-medium bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded-full uppercase">
+                                                                {price.sub_key}
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-2.5 px-2 text-right font-mono font-bold text-gray-900 dark:text-slate-200 whitespace-nowrap">
+                                                        ฿{price.csmbs_price.toLocaleString()}
+                                                    </td>
+                                                    <td className="py-2.5 px-2 text-right font-mono font-bold text-gray-900 dark:text-slate-200 whitespace-nowrap">
+                                                        ฿{price.ucs_price.toLocaleString()}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </section>
+                        );
+                    })
+                )}
+            </div>
         </div>
     );
 };

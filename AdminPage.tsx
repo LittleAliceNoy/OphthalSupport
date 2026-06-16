@@ -125,6 +125,9 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
 
     // --- Prices State & Logic ---
     const [priceSearch, setPriceSearch] = useState('');
+    const [selectedCategory, setSelectedCategory] = useState<'All' | string>('All');
+    const [logicSearch, setLogicSearch] = useState('');
+    const [selectedLogicCategory, setSelectedLogicCategory] = useState<'All' | string>('All');
     const [editingCategory, setEditingCategory] = useState<string | null>(null);
     const [editPricesData, setEditPricesData] = useState<Record<string, {
         displayName: string;
@@ -708,15 +711,24 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
 
     const categories = ['Lens Surgery', 'Retinal Surgery', 'Glaucoma', 'Cornea', 'Oculoplastics', 'Strabismus', 'Others'];
 
+    const filteredOperations = useMemo(() => {
+        return config.operations.filter(op => {
+            const opName = op.name.toLowerCase();
+            const keywords = op.keywords.map(kw => kw.toLowerCase()).join(' ');
+            const search = logicSearch.toLowerCase();
+            return opName.includes(search) || keywords.includes(search) || op.category.toLowerCase().includes(search);
+        });
+    }, [config.operations, logicSearch]);
+
     const groupedOperations = useMemo(() => {
         const groups: Record<string, DBOperation[]> = {};
         categories.forEach(c => { groups[c] = []; });
-        config.operations.forEach(op => {
+        filteredOperations.forEach(op => {
             const cat = categories.includes(op.category) ? op.category : 'Others';
             groups[cat].push(op);
         });
         return groups;
-    }, [config.operations]);
+    }, [filteredOperations]);
 
     const handleCreateOperation = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -923,32 +935,56 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
             {/* Prices Management View */}
             {adminTab === 'prices' && (
                 <div className="space-y-6">
-                    {/* Search Panel */}
-                    <div className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-5 transition-colors duration-300">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-50 dark:border-slate-800">
-                            <div className="flex items-center gap-2">
-                                <Database size={18} className="text-[#8e5a7d] dark:text-brand-primary-dark" />
-                                <h2 className="text-sm font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide">Tool Configurations & Prices</h2>
+                    {/* Filter and search controls above the cards */}
+                    <div className="flex flex-row items-center justify-between gap-2 w-full flex-wrap sm:flex-nowrap">
+                        {/* Category Filter Tabs styled as floating buttons */}
+                        <div className="flex flex-row flex-nowrap overflow-x-auto no-scrollbar gap-1 max-w-full select-none py-0.5 shrink-0">
+                            {['All', ...CATEGORY_ORDER].map(cat => {
+                                const isSelected = selectedCategory === cat;
+                                const labelMap: Record<string, string> = {
+                                    'All': 'All',
+                                    'Lens Surgery': 'Lens',
+                                    'Retinal Surgery': 'Retina',
+                                    'Glaucoma': 'Glaucoma',
+                                    'Cornea': 'Cornea',
+                                    'Generals': 'Generals',
+                                };
+                                const displayLabel = labelMap[cat] || cat;
+                                return (
+                                    <button
+                                        key={cat}
+                                        onClick={() => setSelectedCategory(cat)}
+                                        className={`px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-all border ${
+                                            isSelected
+                                                ? 'bg-[#fcb7f0] border-[#fcb7f0] text-slate-800 font-extrabold shadow-sm scale-105'
+                                                : 'bg-white dark:bg-[#151f32] border-gray-100 dark:border-slate-800 text-gray-500 dark:text-slate-400 shadow-sm hover:shadow hover:bg-gray-50 dark:hover:bg-slate-800/40'
+                                        }`}
+                                    >
+                                        {displayLabel}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        
+                        {/* Search Box & Add Tool Button (shortened) */}
+                        <div className="flex items-center gap-2 max-w-[240px] sm:max-w-xs md:max-w-sm w-full justify-end">
+                            <div className="relative max-w-[150px] sm:max-w-[180px] w-full">
+                                <input
+                                    type="text"
+                                    placeholder="Search tools, keys..."
+                                    value={priceSearch}
+                                    onChange={e => setPriceSearch(e.target.value)}
+                                    className="w-full bg-white dark:bg-[#151f32] border border-gray-100 dark:border-slate-800 rounded-xl pl-8 pr-2.5 py-1.5 text-xs font-semibold shadow-sm outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
+                                />
+                                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
                             </div>
-                            <div className="flex items-center gap-2 max-w-md w-full sm:justify-end">
-                                <div className="relative max-w-xs w-full">
-                                    <input
-                                        type="text"
-                                        placeholder="Search tools or keys..."
-                                        value={priceSearch}
-                                        onChange={e => setPriceSearch(e.target.value)}
-                                        className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg pl-8 pr-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
-                                    />
-                                    <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
-                                </div>
-                                <button
-                                    onClick={() => setShowAddToolForm(!showAddToolForm)}
-                                    className="px-3 py-1.5 bg-[#fcb7f0]/20 hover:bg-[#fcb7f0]/40 text-[#8e5a7d] dark:text-[#fcb7f0] text-xs font-bold rounded-lg transition-all border border-[#fcb7f0]/30 flex items-center gap-1.5 shrink-0"
-                                >
-                                    <Plus size={14} />
-                                    {showAddToolForm ? 'Hide Form' : 'Add Tool'}
-                                </button>
-                            </div>
+                            <button
+                                onClick={() => setShowAddToolForm(!showAddToolForm)}
+                                className="px-3 py-1.5 bg-[#fcb7f0]/20 hover:bg-[#fcb7f0]/40 text-[#8e5a7d] dark:text-[#fcb7f0] text-xs font-bold rounded-lg transition-all border border-[#fcb7f0]/30 flex items-center gap-1.5 shrink-0"
+                            >
+                                <Plus size={14} />
+                                {showAddToolForm ? 'Hide' : 'Add'}
+                            </button>
                         </div>
                     </div>
 
@@ -1162,8 +1198,10 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                         </div>
                     )}
 
-                    {/* Categorized Tables */}
                     {CATEGORY_ORDER.map(category => {
+                        if (selectedCategory !== 'All' && category !== selectedCategory) {
+                            return null;
+                        }
                         const items = categorizedPrices[category] || [];
                         if (items.length === 0) {
                             if (priceSearch.trim()) return null;
@@ -1200,7 +1238,11 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                     <div className="flex justify-between items-center -mx-4 sm:-mx-5 -mt-4 sm:-mt-5 mb-4 px-4 sm:px-5 py-3 border-b border-gray-100 dark:border-slate-800 bg-gray-50/40 dark:bg-slate-800/20 rounded-t-2xl">
                                         <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 flex items-center gap-2">
                                             <span className="w-1.5 h-3 bg-[#fcb7f0] rounded-full"></span>
-                                            {category}
+                                            {(() => {
+                                                if (category.toLowerCase().includes('surgery')) return category;
+                                                if (category === 'Generals') return 'General Surgery';
+                                                return `${category} Surgery`;
+                                            })()}
                                         </h3>
                                     </div>
                                     <div className="border border-dashed border-gray-200 dark:border-slate-800/60 rounded-xl p-6 text-center text-xs text-gray-400 dark:text-slate-500 italic bg-gray-50/20 dark:bg-slate-900/10">
@@ -1243,7 +1285,11 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                     <div className="flex justify-between items-center -mx-4 sm:-mx-5 -mt-4 sm:-mt-5 mb-4 px-4 sm:px-5 py-3 border-b border-gray-100 dark:border-slate-800 bg-gray-50/40 dark:bg-slate-800/20 rounded-t-2xl">
                                         <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 flex items-center gap-2">
                                             <span className="w-1.5 h-3 bg-[#fcb7f0] rounded-full"></span>
-                                            {category}
+                                            {(() => {
+                                                if (category.toLowerCase().includes('surgery')) return category;
+                                                if (category === 'Generals') return 'General Surgery';
+                                                return `${category} Surgery`;
+                                            })()}
                                         </h3>
                                         <div className="flex items-center gap-2">
                                             {editingCategory === category ? (
@@ -1486,7 +1532,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                         })
                     }
 
-                    {priceSearch.trim() && Object.values(categorizedPrices).every(arr => arr.length === 0) && (
+                    {priceSearch.trim() && Object.keys(categorizedPrices).filter(cat => selectedCategory === 'All' || cat === selectedCategory).every(cat => categorizedPrices[cat].length === 0) && (
                         <div className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-8 text-center text-gray-400 dark:text-slate-500 italic text-xs">
                             No tools found matching search term "{priceSearch}"
                         </div>
@@ -1497,23 +1543,71 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
             {/* Surgery Logic / Rule Management View */}
             {adminTab === 'logic' && (
                 <div className="space-y-4">
-                    {/* Add Operation Toggle Panel */}
-                    <div className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-5">
-                        <div className="flex justify-between items-center">
-                            <h2 className="text-xs sm:text-sm font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide flex items-center gap-2">
-                                <Plus size={16} className="text-[#8e5a7d] dark:text-brand-primary-dark" />
-                                Add Surgery Operation
-                            </h2>
+                    {/* Filter and search controls above the cards */}
+                    <div className="flex flex-row items-center justify-between gap-2 w-full flex-wrap sm:flex-nowrap">
+                        {/* Category Filter Tabs styled as floating buttons */}
+                        <div className="flex flex-row flex-nowrap overflow-x-auto no-scrollbar gap-1 max-w-full select-none py-0.5 shrink-0">
+                            {['All', ...categories].map(cat => {
+                                const isSelected = selectedLogicCategory === cat;
+                                const labelMap: Record<string, string> = {
+                                    'All': 'All',
+                                    'Lens Surgery': 'Lens',
+                                    'Retinal Surgery': 'Retina',
+                                    'Glaucoma': 'Glaucoma',
+                                    'Cornea': 'Cornea',
+                                    'Oculoplastics': 'Oculo',
+                                    'Strabismus': 'Strab',
+                                    'Others': 'Others',
+                                };
+                                const displayLabel = labelMap[cat] || cat;
+                                return (
+                                    <button
+                                        key={cat}
+                                        onClick={() => setSelectedLogicCategory(cat)}
+                                        className={`px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-all border ${
+                                            isSelected
+                                                ? 'bg-[#fcb7f0] border-[#fcb7f0] text-slate-800 font-extrabold shadow-sm scale-105'
+                                                : 'bg-white dark:bg-[#151f32] border-gray-100 dark:border-slate-800 text-gray-500 dark:text-slate-400 shadow-sm hover:shadow hover:bg-gray-50 dark:hover:bg-slate-800/40'
+                                        }`}
+                                    >
+                                        {displayLabel}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        
+                        {/* Search Box & Add Operation Button (shortened) */}
+                        <div className="flex items-center gap-2 max-w-[240px] sm:max-w-xs md:max-w-sm w-full justify-end">
+                            <div className="relative max-w-[150px] sm:max-w-[180px] w-full">
+                                <input
+                                    type="text"
+                                    placeholder="Search operations, keys..."
+                                    value={logicSearch}
+                                    onChange={e => setLogicSearch(e.target.value)}
+                                    className="w-full bg-white dark:bg-[#151f32] border border-gray-100 dark:border-slate-800 rounded-xl pl-8 pr-2.5 py-1.5 text-xs font-semibold shadow-sm outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
+                                />
+                                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
+                            </div>
                             <button
                                 onClick={() => setShowAddOpForm(!showAddOpForm)}
-                                className="px-3 py-1 bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-300 text-xs font-bold rounded-lg transition-all"
+                                className="px-3 py-1.5 bg-[#fcb7f0]/20 hover:bg-[#fcb7f0]/40 text-[#8e5a7d] dark:text-[#fcb7f0] text-xs font-bold rounded-lg transition-all border border-[#fcb7f0]/30 flex items-center gap-1.5 shrink-0"
                             >
-                                {showAddOpForm ? 'Hide Form' : 'Show Form'}
+                                <Plus size={14} />
+                                {showAddOpForm ? 'Hide' : 'Add'}
                             </button>
                         </div>
+                    </div>
 
-                        {showAddOpForm && (
-                            <form onSubmit={handleCreateOperation} className="mt-4 p-4 border border-dashed border-gray-200 dark:border-slate-700 rounded-xl space-y-4 animate-slideDown">
+                    {/* Add Operation Form */}
+                    {showAddOpForm && (
+                        <div className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-5 animate-slideDown transition-all duration-300">
+                            <div className="flex justify-between items-center mb-4 border-b border-gray-50 dark:border-slate-800 pb-2">
+                                <h3 className="text-xs font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide flex items-center gap-2">
+                                    <Plus size={16} className="text-[#8e5a7d] dark:text-brand-primary-dark" />
+                                    Add Surgery Operation
+                                </h3>
+                            </div>
+                            <form onSubmit={handleCreateOperation} className="mt-4 p-4 border border-dashed border-gray-200 dark:border-slate-700 rounded-xl space-y-4">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                         <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Operation Name</label>
@@ -1548,19 +1642,31 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                     />
                                     <span className="text-[9px] text-gray-400 dark:text-slate-500 mt-1 block font-medium">Keywords are case-insensitive. Small keywords (≤2 characters) will match whole words only.</span>
                                 </div>
-                                <button
-                                    type="submit"
-                                    className="px-4 py-2 bg-[#fcb7f0] hover:bg-[#fcb7f0]/85 text-slate-800 text-xs font-bold rounded-lg transition-all shadow-sm flex items-center gap-1.5"
-                                >
-                                    <Plus size={14} /> Create Operation
-                                </button>
+                                <div className="flex justify-end gap-2 pt-2 border-t border-gray-50 dark:border-slate-800">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowAddOpForm(false)}
+                                        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-350 text-xs font-bold rounded-lg transition-all"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="px-4 py-2 bg-[#fcb7f0] hover:bg-[#fcb7f0]/85 text-slate-800 text-xs font-bold rounded-lg transition-all shadow-sm flex items-center gap-1.5"
+                                    >
+                                        <Plus size={14} /> Create Operation
+                                    </button>
+                                </div>
                             </form>
-                        )}
-                    </div>
+                        </div>
+                    )}
 
                     {/* Operations Accordion List */}
                     <div className="space-y-4">
                         {categories.map(category => {
+                            if (selectedLogicCategory !== 'All' && category !== selectedLogicCategory) {
+                                return null;
+                            }
                             const operations = groupedOperations[category];
                             if (operations.length === 0) return null;
 
@@ -1568,7 +1674,11 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                 <div key={category} className="space-y-2.5">
                                     <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 px-1 flex items-center gap-2 mt-4">
                                         <span className="w-1.5 h-3 bg-[#fcb7f0] rounded-full"></span>
-                                        {category}
+                                        {(() => {
+                                            if (category.toLowerCase().includes('surgery')) return category;
+                                            if (category === 'Others') return 'Other Surgery';
+                                            return `${category} Surgery`;
+                                        })()}
                                     </h3>
                                     
                                     <div className="space-y-2">
@@ -1825,6 +1935,12 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                 </div>
                             );
                         })}
+
+                        {logicSearch.trim() && Object.keys(groupedOperations).filter(cat => selectedLogicCategory === 'All' || cat === selectedLogicCategory).every(cat => groupedOperations[cat].length === 0) && (
+                            <div className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-8 text-center text-gray-400 dark:text-slate-500 italic text-xs">
+                                No surgery operations found matching search term "{logicSearch}"
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
