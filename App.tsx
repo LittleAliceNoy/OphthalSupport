@@ -19,7 +19,8 @@ import {
     ListChecks,
     Check,
     Syringe,
-    Tag
+    Tag,
+    Search
 } from 'lucide-react';
 
 import {
@@ -260,6 +261,9 @@ const ChecklistSection = ({ title, items, onItemChange, colorClass, showAllText 
 };
 
 const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedCategory, setSelectedCategory] = useState<'All' | string>('All');
+
     const TOOL_CATEGORIES: Record<string, string> = {
         '15-degree-blade': 'Generals',
         'slit-knife': 'Generals',
@@ -336,7 +340,6 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
             const toolPrices = prices.filter(p => p.tool_id === tool.id);
             
             if (tool.id === 'ppv-set') {
-                // Check if 23G and 25G have different prices for each machine
                 const machines = ['Constellation', 'Stellaris'];
                 machines.forEach(machine => {
                     const price23G = toolPrices.find(p => p.sub_key === `23G_${machine}`);
@@ -375,7 +378,6 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
                             });
                         }
                     } else {
-                        // Fallback: push whatever is available
                         toolPrices.filter(p => p.sub_key?.endsWith(machine)).forEach(p => {
                             groups[category].push({ tool, price: p });
                         });
@@ -391,108 +393,173 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
         return groups;
     }, [tools, prices]);
 
+    const getRowDisplayName = (tool: DBTool, price: DBPrice): string => {
+        const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+
+        if (price.display_name) return price.display_name;
+        if (tool.id === 'ctr-no') return 'Capsular Tension Ring';
+        if (tool.id === 'cts') return 'Capsular Tension Segment';
+        if (tool.id === 'glaucoma-device' && price.sub_key) {
+            if (price.sub_key === 'gdi-xen-room') return 'XEN glaucoma gel implant';
+            if (price.sub_key === 'aadi-shunt') return 'AADI shunt';
+            if (price.sub_key === 'gfd-express') return 'Express GFD';
+            return capitalize(price.sub_key.replace(/-/g, ' '));
+        }
+        if (tool.id === 'phaco-machine' && price.sub_key) {
+            return `${capitalize(price.sub_key)} phaco machine`;
+        }
+        if (tool.id === 'ppv-set' && price.sub_key) {
+            const parts = price.sub_key.split('_');
+            const machine = parts.length > 1 ? parts[1] : parts[0];
+            return `23G/25G ${capitalize(machine)}`;
+        }
+        if (tool.id === 'soft-tip') return 'Soft tip';
+        return tool.item;
+    };
+
+    const filteredGroups = useMemo(() => {
+        const result: Record<string, { tool: DBTool, price: DBPrice }[]> = {};
+        
+        Object.keys(categorizedTools).forEach(category => {
+            if (selectedCategory !== 'All' && category !== selectedCategory) {
+                return;
+            }
+            
+            const list = categorizedTools[category] || [];
+            const filteredList = list.filter(({ tool, price }) => {
+                const displayName = getRowDisplayName(tool, price).toLowerCase();
+                const subKey = (price.sub_key || '').toLowerCase();
+                const dbItemName = tool.item.toLowerCase();
+                const query = searchTerm.toLowerCase().trim();
+                
+                if (!query) return true;
+                
+                return displayName.includes(query) || subKey.includes(query) || dbItemName.includes(query);
+            });
+            
+            if (filteredList.length > 0) {
+                result[category] = filteredList;
+            }
+        });
+        
+        return result;
+    }, [categorizedTools, searchTerm, selectedCategory]);
+
     const categories = ['Lens Surgery', 'Retinal Surgery', 'Glaucoma', 'Cornea', 'Generals'];
 
     return (
-        <section className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-5 transition-colors duration-300">
-            <div className="flex items-center gap-2 mb-6 border-b border-gray-50 dark:border-slate-800 pb-3">
-                <Tag size={18} className="text-[#8e5a7d] dark:text-brand-primary-dark" strokeWidth={2.5} />
-                <h2 className="text-sm font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide">Tools & Prices</h2>
+        <div className="space-y-4">
+            {/* Filter and search controls above the card */}
+            <div className="flex flex-row items-center justify-between gap-2 w-full flex-wrap sm:flex-nowrap">
+                {/* Category Filter Tabs styled as floating buttons */}
+                <div className="flex flex-wrap gap-1">
+                    {['All', ...categories].map(cat => {
+                        const isSelected = selectedCategory === cat;
+                        const labelMap: Record<string, string> = {
+                            'All': 'All',
+                            'Lens Surgery': 'Lens',
+                            'Retinal Surgery': 'Retina',
+                            'Glaucoma': 'Glaucoma',
+                            'Cornea': 'Cornea',
+                            'Generals': 'Generals',
+                        };
+                        const displayLabel = labelMap[cat] || cat;
+                        return (
+                            <button
+                                key={cat}
+                                onClick={() => setSelectedCategory(cat)}
+                                className={`px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-all border ${
+                                    isSelected
+                                        ? 'bg-[#fcb7f0] border-[#fcb7f0] text-slate-800 font-extrabold shadow-sm scale-105'
+                                        : 'bg-white dark:bg-[#151f32] border-gray-100 dark:border-slate-800 text-gray-500 dark:text-slate-400 shadow-sm hover:shadow hover:bg-gray-50 dark:hover:bg-slate-800/40'
+                                }`}
+                            >
+                                {displayLabel}
+                            </button>
+                        );
+                    })}
+                </div>
+                
+                {/* Search Box styled as floating box (shortened) */}
+                <div className="relative max-w-[150px] sm:max-w-[180px] md:max-w-xs w-full">
+                    <input
+                        type="text"
+                        placeholder="Search tools, keys..."
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                        className="w-full bg-white dark:bg-[#151f32] border border-gray-100 dark:border-slate-800 rounded-xl pl-8 pr-2.5 py-1.5 text-xs font-semibold shadow-sm outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
+                    />
+                    <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
+                </div>
             </div>
-            
-            <div className="space-y-8">
-                {categories.map(category => {
-                    const items = categorizedTools[category];
-                    if (!items || items.length === 0) return null;
 
-                    return (
-                        <div key={category} className="space-y-3">
-                            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 px-2 flex items-center gap-2">
-                                <span className="w-1 h-3 bg-[#fcb7f0] rounded-full"></span>
-                                {category}
-                            </h3>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left text-[11px] sm:text-xs">
-                                    <thead>
-                                        <tr className="text-gray-400 dark:text-slate-500 border-b border-gray-50 dark:border-slate-800/50">
-                                            <th className="py-2 px-2 font-bold uppercase tracking-wider w-1/2">Tool / Option</th>
-                                            <th className="py-2 px-2 font-bold uppercase tracking-wider text-right">CSMBS</th>
-                                            <th className="py-2 px-2 font-bold uppercase tracking-wider text-right">SSS / UCS</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-50 dark:divide-slate-800/30">
-                                        {items.map(({ tool, price }, idx) => (
-                                            <tr key={`${tool.id}-${price.sub_key || 'default'}-${idx}`} className="hover:bg-gray-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                                                <td className="py-2.5 px-2">
-                                                    {(() => {
-                                                        const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
-
-                                                        if (price.display_name) {
-                                                            return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">{price.display_name}</span>;
-                                                        }
-                                                        if (tool.id === 'ctr-no') {
-                                                            return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">Capsular Tension Ring</span>;
-                                                        }
-                                                        if (tool.id === 'cts') {
-                                                            return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">Capsular Tension Segment</span>;
-                                                        }
-                                                        if (tool.id === 'glaucoma-device' && price.sub_key) {
-                                                            if (price.sub_key === 'gdi-xen-room') return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">XEN glaucoma gel implant</span>;
-                                                            if (price.sub_key === 'aadi-shunt') return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">AADI shunt</span>;
-                                                            if (price.sub_key === 'gfd-express') return <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">Express GFD</span>;
-                                                            return (
-                                                                <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">
-                                                                    {capitalize(price.sub_key.replace(/-/g, ' '))}
-                                                                </span>
-                                                            );
-                                                        }
-                                                        if (tool.id === 'phaco-machine' && price.sub_key) {
-                                                            return (
-                                                                <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">
-                                                                    {capitalize(price.sub_key)} phaco machine
-                                                                </span>
-                                                            );
-                                                        }
-                                                        if (tool.id === 'ppv-set' && price.sub_key) {
-                                                            const parts = price.sub_key.split('_');
-                                                            const machine = parts.length > 1 ? parts[1] : parts[0];
-                                                            return (
-                                                                <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">
-                                                                    23G/25G {capitalize(machine)}
-                                                                </span>
-                                                            );
-                                                        }
-                                                        if (tool.id === 'soft-tip') {
-                                                            return (
-                                                                <span className="font-bold text-gray-900 dark:text-slate-200">Soft tip</span>
-                                                            );
-                                                        }
-                                                        return (
-                                                            <>
-                                                                <span className="font-bold text-gray-900 dark:text-slate-200">{tool.item}</span>
-                                                                {price.sub_key && (
-                                                                    <span className="ml-2 text-[10px] text-gray-500 dark:text-slate-400 font-medium bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded-full uppercase">{price.sub_key}</span>
-                                                                )}
-                                                            </>
-                                                        );
-                                                    })()}
-                                                </td>
-                                                <td className="py-2.5 px-2 text-right font-mono font-bold text-gray-900 dark:text-slate-200 whitespace-nowrap">
-                                                    ฿{price.csmbs_price.toLocaleString()}
-                                                </td>
-                                                <td className="py-2.5 px-2 text-right font-mono font-bold text-gray-900 dark:text-slate-200 whitespace-nowrap">
-                                                    ฿{price.ucs_price.toLocaleString()}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+            {/* Tool & Prices Card */}
+            <section className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-5 transition-colors duration-300">
+                <div className="flex items-center gap-2 mb-6 border-b border-gray-50 dark:border-slate-800 pb-3">
+                    <Tag size={18} className="text-[#8e5a7d] dark:text-brand-primary-dark" strokeWidth={2.5} />
+                    <h2 className="text-sm font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide">Tools & Prices</h2>
+                </div>
+                
+                <div className="space-y-8">
+                    {Object.keys(filteredGroups).length === 0 ? (
+                        <div className="py-8 text-center text-gray-400 dark:text-slate-500 italic text-xs">
+                            No tools found matching search term "{searchTerm}"
                         </div>
-                    );
-                })}
-            </div>
-        </section>
+                    ) : (
+                        categories.map(category => {
+                            const items = filteredGroups[category];
+                            if (!items || items.length === 0) return null;
+
+                            return (
+                                <div key={category} className="space-y-3">
+                                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 px-2 flex items-center gap-2">
+                                        <span className="w-1 h-3 bg-[#fcb7f0] rounded-full"></span>
+                                        {(() => {
+                                            if (category.toLowerCase().includes('surgery')) return category;
+                                            if (category === 'Generals') return 'General Surgery';
+                                            return `${category} Surgery`;
+                                        })()}
+                                    </h3>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-[11px] sm:text-xs">
+                                            <thead>
+                                                <tr className="text-gray-400 dark:text-slate-500 border-b border-gray-50 dark:border-slate-800/50">
+                                                    <th className="py-2 px-2 font-bold uppercase tracking-wider w-1/2">Tool / Option</th>
+                                                    <th className="py-2 px-2 font-bold uppercase tracking-wider text-right">CSMBS</th>
+                                                    <th className="py-2 px-2 font-bold uppercase tracking-wider text-right">SSS / UCS</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-50 dark:divide-slate-800/30">
+                                                {items.map(({ tool, price }, idx) => (
+                                                    <tr key={`${tool.id}-${price.sub_key || 'default'}-${idx}`} className="hover:bg-gray-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                                                        <td className="py-2.5 px-2">
+                                                            <span className="font-bold text-gray-900 dark:text-slate-200 tracking-tight">
+                                                                {getRowDisplayName(tool, price)}
+                                                            </span>
+                                                            {tool.id !== 'glaucoma-device' && tool.id !== 'phaco-machine' && tool.id !== 'ppv-set' && price.sub_key && (
+                                                                <span className="ml-2 text-[10px] text-gray-500 dark:text-slate-400 font-medium bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded-full uppercase">
+                                                                    {price.sub_key}
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        <td className="py-2.5 px-2 text-right font-mono font-bold text-gray-900 dark:text-slate-200 whitespace-nowrap">
+                                                            ฿{price.csmbs_price.toLocaleString()}
+                                                        </td>
+                                                        <td className="py-2.5 px-2 text-right font-mono font-bold text-gray-900 dark:text-slate-200 whitespace-nowrap">
+                                                            ฿{price.ucs_price.toLocaleString()}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            </section>
+        </div>
     );
 };
 
