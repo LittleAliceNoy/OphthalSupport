@@ -2792,7 +2792,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                 {/* Bottom Rules Columns */}
                                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
                                                                     {/* 1. Surgical Tools Column (Left) */}
-                                                                    <div className="flex flex-col h-full bg-gray-100/70 dark:bg-slate-800/40 border border-gray-200/80 dark:border-slate-700/60 rounded-2xl p-3 sm:p-4">
+                                                                    <div className="flex flex-col h-full">
                                                                         <div className="flex items-center gap-1.5 mb-3 pb-1 border-b border-gray-100 dark:border-slate-800/80">
                                                                             <span className="w-1 h-2 bg-sky-400 dark:bg-sky-500 rounded-full"></span>
                                                                             <span className="text-[9px] font-black uppercase tracking-widest text-sky-700 dark:text-sky-400">Surgical Tools</span>
@@ -2802,7 +2802,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                             {!isEditingDetails ? (
                                                                                 /* Read-only view */
                                                                                 opRules.filter(r => r.target_type === 'tool').length === 0 ? (
-                                                                                    <div className="py-6 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
+                                                                                    <div className="p-2.5 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
                                                                                         No surgical tools triggered yet.
                                                                                     </div>
                                                                                 ) : (
@@ -2831,7 +2831,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                             ) : (
                                                                                 /* Edit Details view */
                                                                                 editOpRules.filter(r => r.target_type === 'tool').length === 0 ? (
-                                                                                    <div className="py-6 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
+                                                                                    <div className="p-2.5 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
                                                                                         No surgical tools queued. Click "+ Add Surgical Tool" below.
                                                                                     </div>
                                                                                 ) : (
@@ -2922,7 +2922,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                     </div>
                                                                     
                                                                     {/* 2. Pre-Op Actions Column (Right) */}
-                                                                    <div className="flex flex-col h-full bg-gray-100/70 dark:bg-slate-800/40 border border-gray-200/80 dark:border-slate-700/60 rounded-2xl p-3 sm:p-4">
+                                                                    <div className="flex flex-col h-full">
                                                                         <div className="flex items-center gap-1.5 mb-3 pb-1 border-b border-gray-100 dark:border-slate-800/80">
                                                                             <span className="w-1 h-2 bg-indigo-400 dark:bg-indigo-500 rounded-full"></span>
                                                                             <span className="text-[9px] font-black uppercase tracking-widest text-indigo-700 dark:text-indigo-400">Pre-Op Actions</span>
@@ -2932,7 +2932,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                             {!isEditingDetails ? (
                                                                                 /* Read-only view */
                                                                                 opRules.filter(r => r.target_type === 'action').length === 0 ? (
-                                                                                    <div className="py-6 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
+                                                                                    <div className="p-2.5 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
                                                                                         No pre-op actions triggered yet.
                                                                                     </div>
                                                                                 ) : (
@@ -2954,7 +2954,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                             ) : (
                                                                                 /* Edit Details view */
                                                                                 editOpRules.filter(r => r.target_type === 'action').length === 0 ? (
-                                                                                    <div className="py-6 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
+                                                                                    <div className="p-2.5 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
                                                                                         No pre-op actions queued. Click "+ Add Pre-Op Action" below.
                                                                                     </div>
                                                                                 ) : (
