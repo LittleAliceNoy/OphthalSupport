@@ -49,6 +49,10 @@ export interface DBPrice {
   display_name?: string | null;
 }
 
+function isLegacyPlaceholderTool(tool: DBTool): boolean {
+  return tool.id.trim().toLowerCase() === 'mm' || tool.item.trim().toLowerCase() === 'mm';
+}
+
 export const fetchConfig = async () => {
   try {
     const [
@@ -83,7 +87,7 @@ export const fetchConfig = async () => {
     }
 
     return {
-      tools: tools as DBTool[],
+      tools: (tools as DBTool[]).filter(tool => !isLegacyPlaceholderTool(tool)),
       actions: actions as DBAction[],
       operations: operations as DBOperation[],
       rules: rules as DBRule[],
@@ -102,4 +106,3 @@ export const fetchConfig = async () => {
     };
   }
 };
-

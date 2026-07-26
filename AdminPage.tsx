@@ -18,90 +18,32 @@ import {
     FolderSymlink,
     Folder
 } from 'lucide-react';
-import { supabase } from './supabase';
 import { DBTool, DBAction, DBOperation, DBRule, DBPrice } from './configService';
+import {
+    createOperation,
+    deleteOperation,
+    deletePrice,
+    deleteTool,
+    insertPrice,
+    insertTool,
+    syncOperationRules,
+    updateOperation,
+    updatePrice,
+    updateTool,
+    updateToolCategory,
+    updateToolOrder,
+    updateToolPrices,
+} from './adminService';
 import { NEW_REUSED_OPTIONS } from './constants';
-
-const CATEGORY_ORDER = ['Lens Surgery', 'Retinal Surgery', 'Glaucoma', 'Cornea', 'Generals'];
-
-const TOOL_CATEGORIES: Record<string, string> = {
-    '15-degree-blade': 'Generals',
-    'slit-knife': 'Generals',
-    'crescent-knife': 'Generals',
-    'phaco-machine': 'Lens Surgery',
-    'zeiss-quattro': 'Lens Surgery',
-    'basic-phaco-pack': 'Lens Surgery',
-    'ctr-no': 'Lens Surgery',
-    'cts': 'Lens Surgery',
-    'iris-retractor': 'Lens Surgery',
-    'ppv-set': 'Retinal Surgery',
-    'bbg': 'Retinal Surgery',
-    'ilm-forceps': 'Retinal Surgery',
-    'micro-scissor': 'Retinal Surgery',
-    'silicone-oil': 'Retinal Surgery',
-    'silicone-oil-hd': 'Retinal Surgery',
-    'endolaser': 'Retinal Surgery',
-    'dk-line': 'Retinal Surgery',
-    'soft-tip': 'Retinal Surgery',
-    'glaucoma-device': 'Glaucoma',
-    'punch-trephine': 'Cornea',
-    '5fu': 'Generals',
-    'fibrin-glue': 'Generals',
-};
-
-const TOOL_ORDER = [
-    'phaco-machine',
-    'zeiss-quattro',
-    'basic-phaco-pack',
-    'ctr-no',
-    'cts',
-    'iris-retractor',
-    'ppv-set',
-    'bbg',
-    'ilm-forceps',
-    'micro-scissor',
-    'silicone-oil',
-    'silicone-oil-hd',
-    'endolaser',
-    'dk-line',
-    'soft-tip',
-    'glaucoma-device',
-    'punch-trephine',
-    '15-degree-blade',
-    'slit-knife',
-    'crescent-knife',
-    '5fu',
-    'fibrin-glue'
-];
-
-const getToolDisplayName = (toolId: string, itemText: string, subKey: string | null): string => {
-    const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
-
-    if (toolId === 'ctr-no') {
-        return 'Capsular Tension Ring';
-    }
-    if (toolId === 'cts') {
-        return 'Capsular Tension Segment';
-    }
-    if (toolId === 'glaucoma-device' && subKey) {
-        if (subKey === 'gdi-xen-room') return 'XEN glaucoma gel implant';
-        if (subKey === 'aadi-shunt') return 'AADI shunt';
-        if (subKey === 'gfd-express') return 'Express GFD';
-        return capitalize(subKey.replace(/-/g, ' '));
-    }
-    if (toolId === 'phaco-machine' && subKey) {
-        return `${capitalize(subKey)} phaco machine`;
-    }
-    if (toolId === 'ppv-set' && subKey) {
-        const parts = subKey.split('_');
-        const machine = parts.length > 1 ? parts[1] : parts[0];
-        return `23G/25G ${capitalize(machine)}`;
-    }
-    if (toolId === 'soft-tip') {
-        return 'Soft tip';
-    }
-    return itemText || toolId;
-};
+import AdminShell from './components/admin/AdminShell';
+import { CATEGORY_ORDER, getToolDisplayName } from './components/admin/adminCatalog';
+import { filterAndSortPrices, filterOperations, getPriceDisplayName, groupOperations, groupPricesByCategory } from './components/admin/adminSelectors';
+import AdminFeatureToolbar from './components/admin/AdminFeatureToolbar';
+import AdminModalFrame from './components/admin/AdminModalFrame';
+import OperationHeader from './components/admin/OperationHeader';
+import OperationSummary from './components/admin/OperationSummary';
+import OperationRuleSummary from './components/admin/OperationRuleSummary';
+import OperationRuleEditor, { EditableOperationRule } from './components/admin/OperationRuleEditor';
 
 interface AdminPageProps {
     config: {
@@ -278,63 +220,15 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
     const [dragOverToolId, setDragOverToolId] = useState<string | null>(null);
     const [dragOverCategory, setDragOverCategory] = useState<string | null>(null);
 
-    const filteredPrices = useMemo(() => {
-        const filtered = config.prices.filter(p => {
-            const tool = config.tools.find(t => t.id === p.tool_id);
-            const toolName = tool ? tool.item.toLowerCase() : '';
-            const subKey = p.sub_key ? p.sub_key.toLowerCase() : '';
-            const search = priceSearch.toLowerCase();
-            return toolName.includes(search) || subKey.includes(search) || p.tool_id.toLowerCase().includes(search);
-        });
+    const filteredPrices = useMemo(
+        () => filterAndSortPrices(config.prices, config.tools, priceSearch),
+        [config.prices, config.tools, priceSearch],
+    );
 
-        return [...filtered].sort((a, b) => {
-            const toolA = config.tools.find(t => t.id === a.tool_id);
-            const toolB = config.tools.find(t => t.id === b.tool_id);
-            const catA = toolA?.category || TOOL_CATEGORIES[a.tool_id] || 'Generals';
-            const catB = toolB?.category || TOOL_CATEGORIES[b.tool_id] || 'Generals';
-            
-            const catIdxA = CATEGORY_ORDER.indexOf(catA);
-            const catIdxB = CATEGORY_ORDER.indexOf(catB);
-            
-            if (catIdxA !== catIdxB) {
-                return catIdxA - catIdxB;
-            }
-
-            const orderA = toolA && typeof toolA.sort_order === 'number' ? toolA.sort_order : 0;
-            const orderB = toolB && typeof toolB.sort_order === 'number' ? toolB.sort_order : 0;
-
-            if (orderA !== orderB) {
-                return orderA - orderB;
-            }
-
-            const toolIdxA = TOOL_ORDER.indexOf(a.tool_id);
-            const toolIdxB = TOOL_ORDER.indexOf(b.tool_id);
-            
-            const finalIdxA = toolIdxA === -1 ? 999 : toolIdxA;
-            const finalIdxB = toolIdxB === -1 ? 999 : toolIdxB;
-            
-            if (finalIdxA !== finalIdxB) {
-                return finalIdxA - finalIdxB;
-            }
-
-            const subA = a.sub_key || '';
-            const subB = b.sub_key || '';
-            return subA.localeCompare(subB);
-        });
-    }, [config.prices, config.tools, priceSearch]);
-
-    const categorizedPrices = useMemo(() => {
-        const groups: Record<string, DBPrice[]> = {};
-        CATEGORY_ORDER.forEach(c => { groups[c] = []; });
-        
-        filteredPrices.forEach(p => {
-            const tool = config.tools.find(t => t.id === p.tool_id);
-            const cat = tool?.category || TOOL_CATEGORIES[p.tool_id] || 'Generals';
-            const finalCat = CATEGORY_ORDER.includes(cat) ? cat : 'Generals';
-            groups[finalCat].push(p);
-        });
-        return groups;
-    }, [filteredPrices, config.tools]);
+    const categorizedPrices = useMemo(
+        () => groupPricesByCategory(filteredPrices, config.tools),
+        [filteredPrices, config.tools],
+    );
 
     const handleStartEditCategory = (cat: string) => {
         setEditingCategory(cat);
@@ -348,7 +242,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
         }> = {};
         categoryItems.forEach(price => {
             const tool = config.tools.find(t => t.id === price.tool_id);
-            const dispName = price.display_name || getToolDisplayName(price.tool_id, tool ? tool.item : price.tool_id, price.sub_key);
+            const dispName = getPriceDisplayName(price, tool);
             initialData[price.id] = {
                 displayName: dispName,
                 csmbs: price.csmbs_price,
@@ -379,54 +273,22 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
         try {
             const updates = items.map(item => {
                 const data = editPricesData[item.id];
-                if (!data) return Promise.resolve({ error: null });
-                return supabase
-                    .from('tool_prices')
-                    .update({
-                        csmbs_price: Number(data.csmbs),
-                        sss_price: Number(data.sss),
-                        ucs_price: Number(data.ucs),
-                        display_name: data.displayName.trim()
-                    })
-                    .eq('id', item.id);
-            });
+                return data ? {
+                    id: item.id,
+                    csmbs_price: Number(data.csmbs),
+                    sss_price: Number(data.sss),
+                    ucs_price: Number(data.ucs),
+                    display_name: data.displayName.trim(),
+                } : null;
+            }).filter((update): update is NonNullable<typeof update> => update !== null);
 
-            const results = await Promise.all(updates);
-            const firstErr = results.find(r => r.error)?.error;
-            if (firstErr) throw firstErr;
+            const { displayNameSupported } = await updateToolPrices(updates);
 
             showToast(`All prices in "${cat}" updated successfully`, 'success');
             setEditingCategory(null);
             await onRefresh();
         } catch (err: any) {
-            if (err.message?.includes('column "display_name"') || err.code === '42703') {
-                // Fallback: update without display_name
-                try {
-                    const fallbackUpdates = items.map(item => {
-                        const data = editPricesData[item.id];
-                        if (!data) return Promise.resolve({ error: null });
-                        return supabase
-                            .from('tool_prices')
-                            .update({
-                                csmbs_price: Number(data.csmbs),
-                                sss_price: Number(data.sss),
-                                ucs_price: Number(data.ucs)
-                            })
-                            .eq('id', item.id);
-                    });
-                    const fallbackResults = await Promise.all(fallbackUpdates);
-                    const firstFallbackErr = fallbackResults.find(r => r.error)?.error;
-                    if (firstFallbackErr) throw firstFallbackErr;
-
-                    showToast(`Prices in "${cat}" updated! Run SQL to enable name changes: ALTER TABLE tool_prices ADD COLUMN display_name VARCHAR;`, 'error');
-                    setEditingCategory(null);
-                    await onRefresh();
-                } catch (fallbackErr: any) {
-                    showToast(fallbackErr.message || 'Error updating prices', 'error');
-                }
-            } else {
-                showToast(err.message || 'Error updating details', 'error');
-            }
+            showToast(err.message || 'Error updating details', 'error');
         } finally {
             setLoading(null);
         }
@@ -466,44 +328,19 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
 
         setLoading('Saving tool prices...');
         try {
-            const { error } = await supabase
-                .from('tool_prices')
-                .update({
+            const result = await updatePrice({
+                id: priceId,
                     csmbs_price: Number(data.csmbs),
                     sss_price: Number(data.sss),
                     ucs_price: Number(data.ucs),
                     display_name: data.displayName.trim()
-                })
-                .eq('id', priceId);
-
-            if (error) throw error;
+            });
 
             showToast(`Tool prices updated successfully`, 'success');
             setEditingPriceId(null);
             await onRefresh();
         } catch (err: any) {
-            if (err.message?.includes('column "display_name"') || err.code === '42703') {
-                // Fallback: update without display_name
-                try {
-                    const { error: fallbackErr } = await supabase
-                        .from('tool_prices')
-                        .update({
-                            csmbs_price: Number(data.csmbs),
-                            sss_price: Number(data.sss),
-                            ucs_price: Number(data.ucs)
-                        })
-                        .eq('id', priceId);
-                    if (fallbackErr) throw fallbackErr;
-
-                    showToast(`Prices updated! Run SQL to enable name changes: ALTER TABLE tool_prices ADD COLUMN display_name VARCHAR;`, 'error');
-                    setEditingPriceId(null);
-                    await onRefresh();
-                } catch (fallbackErr: any) {
-                    showToast(fallbackErr.message || 'Error updating prices', 'error');
-                }
-            } else {
-                showToast(err.message || 'Error updating details', 'error');
-            }
+            showToast(err.message || 'Error updating details', 'error');
         } finally {
             setLoading(null);
         }
@@ -590,110 +427,41 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                 defaultValue = newToolSubtypes[0]?.subKey.trim() || null;
             }
 
-            let toolErr: any = null;
-            try {
-                const { error } = await supabase
-                    .from('tools')
-                    .insert({
-                        id: tid,
-                        item: dName,
-                        type: newToolType,
-                        category: newToolCategory,
-                        is_active: true,
-                        sort_order: 999,
-                        options: toolsOptions,
-                        default_value: defaultValue
-                    });
-                toolErr = error;
-            } catch (err: any) {
-                toolErr = err;
-            }
-
-            if (toolErr && (toolErr.message?.includes('column "category"') || toolErr.code === '42703')) {
-                const { error: retryErr } = await supabase
-                    .from('tools')
-                    .insert({
-                        id: tid,
-                        item: dName,
-                        type: newToolType,
-                        is_active: true,
-                        sort_order: 999,
-                        options: toolsOptions,
-                        default_value: defaultValue
-                    });
-                if (retryErr) throw retryErr;
+            const toolResult = await insertTool({
+                id: tid,
+                item: dName,
+                type: newToolType,
+                category: newToolCategory,
+                is_active: true,
+                sort_order: 999,
+                options: toolsOptions,
+                default_value: defaultValue,
+            });
+            if (!toolResult.categorySupported) {
                 showToast('Tool added to database! Run SQL to enable category changes: ALTER TABLE tools ADD COLUMN category VARCHAR;', 'error');
-            } else if (toolErr) {
-                throw toolErr;
             }
 
             if (newToolType === 'radio') {
-                const insertPromises = newToolSubtypes.map(async st => {
-                    let priceErr: any = null;
-                    try {
-                        const { error } = await supabase
-                            .from('tool_prices')
-                            .insert({
-                                tool_id: tid,
-                                sub_key: st.subKey.trim(),
-                                csmbs_price: Number(st.csmbs),
-                                sss_price: Number(st.sss),
-                                ucs_price: Number(st.ucs),
-                                display_name: st.displayName.trim()
-                            });
-                        priceErr = error;
-                    } catch (err: any) {
-                        priceErr = err;
-                    }
-
-                    if (priceErr && (priceErr.message?.includes('column "display_name"') || priceErr.code === '42703')) {
-                        const { error: retryErr } = await supabase
-                            .from('tool_prices')
-                            .insert({
-                                tool_id: tid,
-                                sub_key: st.subKey.trim(),
-                                csmbs_price: Number(st.csmbs),
-                                sss_price: Number(st.sss),
-                                ucs_price: Number(st.ucs)
-                            });
-                        if (retryErr) throw retryErr;
-                    } else if (priceErr) {
-                        throw priceErr;
-                    }
-                });
+                const insertPromises = newToolSubtypes.map(st => insertPrice({
+                    tool_id: tid,
+                    sub_key: st.subKey.trim(),
+                    csmbs_price: Number(st.csmbs),
+                    sss_price: Number(st.sss),
+                    ucs_price: Number(st.ucs),
+                    display_name: st.displayName.trim(),
+                }));
                 await Promise.all(insertPromises);
             } else {
-                let priceErr: any = null;
-                try {
-                    const { error } = await supabase
-                        .from('tool_prices')
-                        .insert({
-                            tool_id: tid,
-                            sub_key: null,
-                            csmbs_price: Number(newToolCsmbs),
-                            sss_price: Number(newToolSss),
-                            ucs_price: Number(newToolUcs),
-                            display_name: dName
-                        });
-                    priceErr = error;
-                } catch (err: any) {
-                    priceErr = err;
-                }
-
-                if (priceErr && (priceErr.message?.includes('column "display_name"') || priceErr.code === '42703')) {
-                    const { error: retryErr } = await supabase
-                        .from('tool_prices')
-                        .insert({
-                            tool_id: tid,
-                            sub_key: null,
-                            csmbs_price: Number(newToolCsmbs),
-                            sss_price: Number(newToolSss),
-                            ucs_price: Number(newToolUcs)
-                        });
-                    if (retryErr) throw retryErr;
+                const priceResult = await insertPrice({
+                    tool_id: tid,
+                    sub_key: null,
+                    csmbs_price: Number(newToolCsmbs),
+                    sss_price: Number(newToolSss),
+                    ucs_price: Number(newToolUcs),
+                    display_name: dName,
+                });
+                if (!priceResult.displayNameSupported) {
                     showToast('Tool added, but display name not saved in pricing. Run SQL: ALTER TABLE tool_prices ADD COLUMN display_name VARCHAR;', 'error');
-                } else if (priceErr) {
-                    throw priceErr;
                 }
             }
 
@@ -720,24 +488,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
 
         setLoading('Deleting tool...');
         try {
-            const { error: priceErr } = await supabase
-                .from('tool_prices')
-                .delete()
-                .eq('tool_id', toolId);
-            if (priceErr) throw priceErr;
-
-            const { error: ruleErr } = await supabase
-                .from('operation_rules')
-                .delete()
-                .eq('target_type', 'tool')
-                .eq('target_id', toolId);
-            if (ruleErr) throw ruleErr;
-
-            const { error: toolErr } = await supabase
-                .from('tools')
-                .delete()
-                .eq('id', toolId);
-            if (toolErr) throw toolErr;
+            await deleteTool(toolId);
 
             showToast(`Tool "${toolId}" deleted successfully`, 'success');
             await onRefresh();
@@ -755,11 +506,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
         setLoading('Deleting subtype...');
         try {
             // 1. Delete price row from tool_prices
-            const { error: priceErr } = await supabase
-                .from('tool_prices')
-                .delete()
-                .eq('id', priceRow.id);
-            if (priceErr) throw priceErr;
+            await deletePrice(priceRow.id);
 
             // 2. Fetch tool options and update options array in tools table
             const tool = config.tools.find(t => t.id === priceRow.tool_id);
@@ -768,18 +515,14 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                 // Filter out the deleted subtype
                 const updatedOptions = currentOptions.filter((opt: any) => opt.value !== priceRow.sub_key);
                 
-                const { error: toolErr } = await supabase
-                    .from('tools')
-                    .update({
+                await updateTool(priceRow.tool_id, {
                         options: updatedOptions.length > 0 ? updatedOptions : null,
                         // If no options left, change type to checkbox
                         type: updatedOptions.length > 0 ? tool.type : 'checkbox',
                         default_value: tool.default_value === priceRow.sub_key 
                             ? (updatedOptions[0]?.value || null) 
                             : tool.default_value
-                    })
-                    .eq('id', priceRow.tool_id);
-                if (toolErr) throw toolErr;
+                    });
             }
 
             showToast(`Subtype "${priceRow.sub_key}" deleted successfully`, 'success');
@@ -819,47 +562,20 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                 { label: dispName, value: subKey }
             ];
 
-            const { error: toolErr } = await supabase
-                .from('tools')
-                .update({
-                    options: updatedOptions,
-                    type: 'radio' // Ensure type is radio if it has subtypes
-                })
-                .eq('id', activeAddSubtypeTool.id);
-            if (toolErr) throw toolErr;
+            await updateTool(activeAddSubtypeTool.id, {
+                options: updatedOptions,
+                type: 'radio',
+            });
 
             // 2. Insert into tool_prices table
-            let priceErr: any = null;
-            try {
-                const { error } = await supabase
-                    .from('tool_prices')
-                    .insert({
-                        tool_id: activeAddSubtypeTool.id,
-                        sub_key: subKey,
-                        csmbs_price: Number(newSubtypeCsmbs),
-                        sss_price: Number(newSubtypeSss),
-                        ucs_price: Number(newSubtypeUcs),
-                        display_name: dispName
-                    });
-                priceErr = error;
-            } catch (err: any) {
-                priceErr = err;
-            }
-
-            if (priceErr && (priceErr.message?.includes('column "display_name"') || priceErr.code === '42703')) {
-                const { error: retryErr } = await supabase
-                    .from('tool_prices')
-                    .insert({
-                        tool_id: activeAddSubtypeTool.id,
-                        sub_key: subKey,
-                        csmbs_price: Number(newSubtypeCsmbs),
-                        sss_price: Number(newSubtypeSss),
-                        ucs_price: Number(newSubtypeUcs)
-                    });
-                if (retryErr) throw retryErr;
-            } else if (priceErr) {
-                throw priceErr;
-            }
+            await insertPrice({
+                tool_id: activeAddSubtypeTool.id,
+                sub_key: subKey,
+                csmbs_price: Number(newSubtypeCsmbs),
+                sss_price: Number(newSubtypeSss),
+                ucs_price: Number(newSubtypeUcs),
+                display_name: dispName,
+            });
 
             showToast(`Subtype "${dispName}" added successfully`, 'success');
             
@@ -904,32 +620,15 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                     sort_order: (idx + 1) * 10
                 }));
 
-                const results = await Promise.all(
-                    updates.map(upd => 
-                        supabase
-                            .from('tools')
-                            .update({ sort_order: upd.sort_order })
-                            .eq('id', upd.id)
-                    )
-                );
-
-                const firstErr = results.find(r => r.error)?.error;
-                if (firstErr) throw firstErr;
+                await updateToolOrder(updates);
 
                 showToast('Tool order updated successfully', 'success');
             } else {
                 // Update category in DB
-                const { error: catErr } = await supabase
-                    .from('tools')
-                    .update({ category: targetCategory })
-                    .eq('id', draggedId);
-
-                if (catErr) {
-                    if (catErr.message?.includes('column "category"') || catErr.code === '42703') {
-                        showToast('Run SQL to enable category changes: ALTER TABLE tools ADD COLUMN category VARCHAR;', 'error');
-                        return;
-                    }
-                    throw catErr;
+                const categoryResult = await updateToolCategory(draggedId, targetCategory);
+                if (!categoryResult.categorySupported) {
+                    showToast('Run SQL to enable category changes: ALTER TABLE tools ADD COLUMN category VARCHAR;', 'error');
+                    return;
                 }
 
                 // Get target items
@@ -959,17 +658,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                     sort_order: (idx + 1) * 10
                 }));
 
-                const results = await Promise.all(
-                    updates.map(upd => 
-                        supabase
-                            .from('tools')
-                            .update({ sort_order: upd.sort_order })
-                            .eq('id', upd.id)
-                    )
-                );
-
-                const firstErr = results.find(r => r.error)?.error;
-                if (firstErr) throw firstErr;
+                await updateToolOrder(updates);
 
                 showToast(`Tool moved to ${targetCategory} successfully`, 'success');
             }
@@ -1023,34 +712,19 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
     const [newRuleDefaultVal, setNewRuleDefaultVal] = useState('');
 
     // Edit operation draft rules (tools & pre-op actions saved on card save)
-    const [editOpRules, setEditOpRules] = useState<Array<{
-        id?: string;
-        operation_id: string;
-        target_type: 'tool' | 'action';
-        target_id: string;
-        default_selected_value: string | null;
-    }>>([]);
+    const [editOpRules, setEditOpRules] = useState<EditableOperationRule[]>([]);
 
     const categories = ['Lens Surgery', 'Retinal Surgery', 'Glaucoma', 'Cornea', 'Oculoplastics', 'Strabismus', 'Others'];
 
-    const filteredOperations = useMemo(() => {
-        return config.operations.filter(op => {
-            const opName = op.name.toLowerCase();
-            const keywords = op.keywords.map(kw => kw.toLowerCase()).join(' ');
-            const search = logicSearch.toLowerCase();
-            return opName.includes(search) || keywords.includes(search) || op.category.toLowerCase().includes(search);
-        });
-    }, [config.operations, logicSearch]);
+    const filteredOperations = useMemo(
+        () => filterOperations(config.operations, logicSearch),
+        [config.operations, logicSearch],
+    );
 
-    const groupedOperations = useMemo(() => {
-        const groups: Record<string, DBOperation[]> = {};
-        categories.forEach(c => { groups[c] = []; });
-        filteredOperations.forEach(op => {
-            const cat = categories.includes(op.category) ? op.category : 'Others';
-            groups[cat].push(op);
-        });
-        return groups;
-    }, [filteredOperations]);
+    const groupedOperations = useMemo(
+        () => groupOperations(filteredOperations, categories),
+        [filteredOperations, categories],
+    );
 
     const handleAddKeywordToNewOp = (kw: string): boolean => {
         const trimmed = kw.trim();
@@ -1137,15 +811,11 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
 
         setLoading('Creating operation...');
         try {
-            const { error } = await supabase
-                .from('operations')
-                .insert([{
+            await createOperation({
                     name: newOpName.trim(),
                     category: newOpCategory,
                     keywords: finalKeywords
-                }]);
-
-            if (error) throw error;
+                });
             showToast('Operation created successfully', 'success');
             setNewOpName('');
             setNewOpKeywords([]);
@@ -1252,16 +922,12 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
         setLoading('Saving operation details...');
         try {
             // 1. Update operation metadata
-            const { error: opErr } = await supabase
-                .from('operations')
-                .update({
+            await updateOperation({
+                id: opId,
                     name: editOpName.trim(),
                     category: editOpCategory,
                     keywords: finalKeywords
-                })
-                .eq('id', opId);
-
-            if (opErr) throw opErr;
+                });
 
             // 2. Sync rules in Supabase
             const dbRules = config?.rules.filter(r => r.operation_id === opId) || [];
@@ -1271,11 +937,6 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
             const validRuleIds = validRules.map(r => r.id).filter(Boolean);
             const idsToDelete = dbRuleIds.filter(id => !validRuleIds.includes(id));
             if (idsToDelete.length > 0) {
-                const { error: delErr } = await supabase
-                    .from('operation_rules')
-                    .delete()
-                    .in('id', idsToDelete);
-                if (delErr) throw delErr;
             }
 
             // B) Insert new rules
@@ -1288,27 +949,19 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                     default_selected_value: r.default_selected_value ? r.default_selected_value.trim() || null : null
                 }));
 
-            if (newRulesToInsert.length > 0) {
-                const { error: insErr } = await supabase
-                    .from('operation_rules')
-                    .insert(newRulesToInsert);
-                if (insErr) throw insErr;
-            }
-
-            // C) Update existing rules if target_id or default_selected_value changed
+            const rulesToUpdate = [];
             for (const r of validRules.filter(r => r.id)) {
                 const orig = dbRules.find(d => d.id === r.id);
                 if (orig && (orig.target_id !== r.target_id || (orig.default_selected_value || null) !== (r.default_selected_value || null))) {
-                    const { error: upErr } = await supabase
-                        .from('operation_rules')
-                        .update({
-                            target_id: r.target_id,
-                            default_selected_value: r.default_selected_value ? r.default_selected_value.trim() || null : null
-                        })
-                        .eq('id', r.id);
-                    if (upErr) throw upErr;
+                    rulesToUpdate.push({
+                        id: r.id as string,
+                        target_id: r.target_id,
+                        default_selected_value: r.default_selected_value ? r.default_selected_value.trim() || null : null,
+                    });
                 }
             }
+
+            await syncOperationRules(opId, idsToDelete, newRulesToInsert, rulesToUpdate);
 
             showToast('Operation updated successfully', 'success');
             setEditOpId(null);
@@ -1327,21 +980,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
         }
         setLoading('Deleting operation...');
         try {
-            // Delete rules first
-            const { error: rulesError } = await supabase
-                .from('operation_rules')
-                .delete()
-                .eq('operation_id', opId);
-
-            if (rulesError) throw rulesError;
-
-            // Delete operation
-            const { error: opError } = await supabase
-                .from('operations')
-                .delete()
-                .eq('id', opId);
-
-            if (opError) throw opError;
+            await deleteOperation(opId);
 
             showToast('Operation and its rules deleted successfully', 'success');
             setExpandedOpId(null);
@@ -1386,12 +1025,17 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
             }
             return a.item.localeCompare(b.item);
         });
-        return sortedTools.map(t => ({ 
+        return sortedTools
+            // `mm` is a stale legacy tool row and is not a real surgical tool.
+            // Keep it out of new rule selectors until the legacy row is removed
+            // from the database.
+            .filter(t => t.id.toLowerCase() !== 'mm' && t.item.trim().toLowerCase() !== 'mm')
+            .map(t => ({
             id: t.id, 
             name: t.item, 
             options: t.options,
             category: t.category || 'Generals'
-        }));
+            }));
     }, [config?.tools]);
 
     const actionRuleOptions = useMemo(() => {
@@ -1400,156 +1044,53 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
     }, [config?.actions]);
 
     return (
-        <div className="space-y-6 animate-fadeIn pb-12">
-            {isOffline && (
-                <div className="flex items-center gap-3 p-4 bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/30 rounded-2xl shadow-sm text-xs font-semibold leading-relaxed">
-                    <AlertTriangle size={18} className="text-amber-500 shrink-0" />
-                    <div>
-                        <span className="font-bold text-amber-800 dark:text-amber-300">Offline Fallback Mode:</span> You are currently viewing local configuration data. Saving new tools, deleting items, or editing prices and rules is disabled.
-                    </div>
-                </div>
-            )}
-
-            {/* Admin Tabs */}
-            <div className="flex bg-gray-100 dark:bg-slate-800/60 p-1 rounded-xl max-w-md">
-                <button
-                    onClick={() => {
-                        if (hasUnsavedChanges()) {
-                            alert('You have unsaved changes. Please save or cancel your edits first.');
-                            return;
-                        }
-                        setEditingCategory(null);
-                        setEditingPriceId(null);
-                        setAdminTab('prices');
-                    }}
-                    className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
-                        adminTab === 'prices'
-                            ? 'bg-white dark:bg-[#151f32] text-gray-900 dark:text-white shadow-sm'
-                            : 'text-gray-500 hover:text-gray-800 dark:text-slate-400 dark:hover:text-slate-200'
-                    }`}
-                >
-                    Manage Tool Prices
-                </button>
-                <button
-                    onClick={() => {
-                        if (hasUnsavedChanges()) {
-                            alert('You have unsaved changes. Please save or cancel your edits first.');
-                            return;
-                        }
-                        setEditingCategory(null);
-                        setEditingPriceId(null);
-                        setAdminTab('logic');
-                    }}
-                    className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
-                        adminTab === 'logic'
-                            ? 'bg-white dark:bg-[#151f32] text-gray-900 dark:text-white shadow-sm'
-                            : 'text-gray-500 hover:text-gray-800 dark:text-slate-400 dark:hover:text-slate-200'
-                    }`}
-                >
-                    Manage Surgery Logic
-                </button>
-            </div>
+        <AdminShell
+            isOffline={isOffline}
+            activeTab={adminTab}
+            canNavigate={!hasUnsavedChanges()}
+            onTabChange={(tab) => {
+                setEditingCategory(null);
+                setEditingPriceId(null);
+                setAdminTab(tab);
+            }}
+        >
 
             {/* Prices Management View */}
             {adminTab === 'prices' && (
                 <div className="space-y-6">
-                    {/* Filter and search controls above the cards */}
-                    <div className="flex flex-row items-center justify-between gap-2 w-full flex-wrap sm:flex-nowrap">
-                        {/* Category Filter Tabs styled as floating buttons */}
-                        <div className="flex flex-row flex-nowrap overflow-x-auto no-scrollbar gap-1 max-w-full select-none py-0.5 shrink-0">
-                            {['All', ...CATEGORY_ORDER].map(cat => {
-                                const isSelected = selectedCategory === cat;
-                                const labelMap: Record<string, string> = {
-                                    'All': 'All',
-                                    'Lens Surgery': 'Lens',
-                                    'Retinal Surgery': 'Retina',
-                                    'Glaucoma': 'Glaucoma',
-                                    'Cornea': 'Cornea',
-                                    'Generals': 'Generals',
-                                };
-                                const displayLabel = labelMap[cat] || cat;
-                                return (
-                                    <button
-                                        key={cat}
-                                        onClick={() => {
-                                            if (hasUnsavedChanges()) {
-                                                alert('You have unsaved changes. Please save or cancel your edits first.');
-                                                return;
-                                            }
-                                            setEditingCategory(null);
-                                            setEditingPriceId(null);
-                                            setSelectedCategory(cat);
-                                        }}
-                                        className={`px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-all border ${
-                                            isSelected
-                                                ? 'bg-[#fcb7f0] border-[#fcb7f0] text-slate-800 font-extrabold shadow-sm scale-105'
-                                                : 'bg-white dark:bg-[#151f32] border-gray-100 dark:border-slate-800 text-gray-500 dark:text-slate-400 shadow-sm hover:shadow hover:bg-gray-50 dark:hover:bg-slate-800/40'
-                                        }`}
-                                    >
-                                        {displayLabel}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                        
-                        {/* Search Box & Add Tool Button (shortened) */}
-                        <div className="flex items-center gap-2 max-w-[240px] sm:max-w-xs md:max-w-sm w-full justify-end">
-                            <div className="relative max-w-[150px] sm:max-w-[180px] w-full">
-                                <input
-                                    type="text"
-                                    placeholder="Search tools, keys..."
-                                    value={priceSearch}
-                                    onChange={e => setPriceSearch(e.target.value)}
-                                    className="w-full bg-white dark:bg-[#151f32] border border-gray-100 dark:border-slate-800 rounded-xl pl-8 pr-2.5 py-1.5 text-xs font-semibold shadow-sm outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
-                                />
-                                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
-                            </div>
-                             <button
-                                onClick={() => {
-                                    if (hasUnsavedChanges()) {
-                                        alert('You have unsaved changes. Please save or cancel your edits first.');
-                                        return;
-                                    }
-                                    setEditingCategory(null);
-                                    setEditingPriceId(null);
-                                    if (!isOffline) {
-                                        if (showAddToolForm) {
-                                            handleCloseAddToolForm();
-                                        } else {
-                                            setShowAddToolForm(true);
-                                        }
-                                    }
-                                }}
-                                disabled={isOffline}
-                                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all border flex items-center gap-1.5 shrink-0 ${
-                                    isOffline 
-                                        ? 'bg-gray-100 dark:bg-slate-800 text-gray-400 dark:text-slate-600 border-gray-200 dark:border-slate-700 cursor-not-allowed opacity-50'
-                                        : 'bg-[#fcb7f0]/20 hover:bg-[#fcb7f0]/40 text-[#8e5a7d] dark:text-[#fcb7f0] border-[#fcb7f0]/30'
-                                }`}
-                            >
-                                <Plus size={14} />
-                                {showAddToolForm ? 'Hide' : 'Add'}
-                            </button>
-                        </div>
-                    </div>
+                    <AdminFeatureToolbar
+                        categories={['All', ...CATEGORY_ORDER]}
+                        selectedCategory={selectedCategory}
+                        onCategoryChange={category => {
+                            if (hasUnsavedChanges()) {
+                                alert('You have unsaved changes. Please save or cancel your edits first.');
+                                return;
+                            }
+                            setEditingCategory(null);
+                            setEditingPriceId(null);
+                            setSelectedCategory(category);
+                        }}
+                        search={priceSearch}
+                        onSearchChange={setPriceSearch}
+                        searchPlaceholder="Search tools, keys..."
+                        addLabel="Add"
+                        addOpen={showAddToolForm}
+                        disabled={isOffline}
+                        onAddToggle={() => {
+                            if (hasUnsavedChanges()) {
+                                alert('You have unsaved changes. Please save or cancel your edits first.');
+                                return;
+                            }
+                            setEditingCategory(null);
+                            setEditingPriceId(null);
+                            if (showAddToolForm) handleCloseAddToolForm();
+                            else setShowAddToolForm(true);
+                        }}
+                    />
 
                     {/* Add Tool Form Modal */}
                     {showAddToolForm && (
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn p-4">
-                            <div className="bg-white dark:bg-[#151f32] rounded-2xl shadow-xl border border-gray-150 dark:border-slate-800 p-5 sm:p-6 w-full max-w-4xl animate-scaleUp overflow-y-auto max-h-[90vh]">
-                                <div className="flex justify-between items-center mb-4 border-b border-gray-50 dark:border-slate-800 pb-2">
-                                    <h3 className="text-xs font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide flex items-center gap-2">
-                                        <Plus size={16} className="text-[#8e5a7d] dark:text-brand-primary-dark" />
-                                        Add New Tool
-                                    </h3>
-                                    <button 
-                                        type="button"
-                                        onClick={handleCloseAddToolForm}
-                                        className="text-gray-400 hover:text-gray-500 transition-colors p-1"
-                                    >
-                                        <X size={18} />
-                                    </button>
-                                </div>
+                        <AdminModalFrame title="Add New Tool" maxWidth="max-w-4xl" onClose={handleCloseAddToolForm}>
                             <form onSubmit={handleAddToolSubmit} className="mt-4 p-4 border border-dashed border-gray-200 dark:border-slate-700 rounded-xl space-y-4">
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                     <div>
@@ -1754,26 +1295,11 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                     </button>
                                 </div>
                             </form>
-                        </div>
-                    </div>
+                        </AdminModalFrame>
                 )}
                     {/* Add Subtype Form Modal */}
                     {activeAddSubtypeTool && (
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn p-4">
-                            <div className="bg-white dark:bg-[#151f32] rounded-2xl shadow-xl border border-gray-150 dark:border-slate-800 p-5 sm:p-6 w-full max-w-2xl animate-scaleUp overflow-y-auto max-h-[90vh]">
-                                <div className="flex justify-between items-center mb-4 border-b border-gray-50 dark:border-slate-800 pb-2">
-                                    <h3 className="text-xs font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide flex items-center gap-2">
-                                        <Plus size={16} className="text-[#8e5a7d] dark:text-brand-primary-dark" />
-                                        Add Subtype Option (Group: {activeAddSubtypeTool.item})
-                                    </h3>
-                                    <button 
-                                        type="button"
-                                        onClick={() => setActiveAddSubtypeTool(null)}
-                                        className="text-gray-400 hover:text-gray-500 transition-colors p-1"
-                                    >
-                                        <X size={18} />
-                                    </button>
-                                </div>
+                        <AdminModalFrame title={`Add Subtype Option (Group: ${activeAddSubtypeTool.item})`} maxWidth="max-w-2xl" onClose={() => setActiveAddSubtypeTool(null)}>
                                 <form onSubmit={handleAddSubtypeSubmit} className="mt-4 p-4 border border-dashed border-gray-200 dark:border-slate-700 rounded-xl space-y-4">
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                         <div>
@@ -1868,8 +1394,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                         </button>
                                     </div>
                                 </form>
-                            </div>
-                        </div>
+                        </AdminModalFrame>
                     )}
 
                     {CATEGORY_ORDER.map(category => {
@@ -2037,7 +1562,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                          }
                                                          return lastIdx === idx;
                                                      })();
-                                                     const isNewReuseTool = tool?.options?.some((o: any) => o.value === NEW_REUSED_OPTIONS.NEW || o.value === NEW_REUSED_OPTIONS.REUSED);
+                                                     const isNewReuseTool = tool?.options?.some(o => o.value === NEW_REUSED_OPTIONS.NEW || o.value === NEW_REUSED_OPTIONS.REUSED);
                                                      const toolPricesCount = items.filter(item => item.tool_id === price.tool_id).length;
                                                      const hasSubtypes = toolPricesCount > 1 && !isNewReuseTool;
                                                      const isSubtypeTool = (tool?.type === 'radio') || (tool?.options && tool.options.length > 0 && !isNewReuseTool) || hasSubtypes;
@@ -2050,68 +1575,67 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                     };
 
                                                     return (
-                                                        <>
-                                                            {showGroupHeader && (
-                                                                <tr key={`group-header-${price.tool_id}`} className="bg-[#8e5a7d]/5 dark:bg-slate-800/60 border-y border-[#8e5a7d]/15 dark:border-slate-700/80 font-bold text-xs text-gray-800 dark:text-slate-350">
-                                                                    <td className="py-3 px-3" colSpan={2}>
-                                                                        <div className="flex items-center gap-2">
-                                                                            <span className="w-1 h-4 bg-[#8e5a7d] dark:bg-[#fcb7f0] rounded shrink-0"></span>
-                                                                            <Folder size={13} className="text-[#8e5a7d] dark:text-[#fcb7f0] shrink-0" />
-                                                                            <span className="font-extrabold text-[#8e5a7d] dark:text-white uppercase tracking-wider text-[10px]">
-                                                                                {tool ? tool.item : price.tool_id}
-                                                                            </span>
-                                                                        </div>
-                                                                    </td>
-                                                                    <td className="py-3 px-2 text-right font-mono"></td>
-                                                                    <td className="py-3 px-2 text-right font-mono"></td>
-                                                                    <td className="py-3 px-2 text-right font-mono"></td>
-                                                                    <td className="py-3 px-2 text-center">
-                                                                        <div className="flex items-center justify-center gap-2">
-                                                                            <div 
-                                                                                className={`relative p-1 text-[#8e5a7d] hover:text-[#734464] hover:bg-[#fcb7f0]/10 dark:text-[#fcb7f0] dark:hover:text-[#f78de3] dark:hover:bg-[#fcb7f0]/5 rounded transition-all flex items-center justify-center ${
-                                                                                    (loading !== null)
-                                                                                        ? 'opacity-50 cursor-not-allowed'
-                                                                                        : 'cursor-pointer'
-                                                                                }`}
-                                                                                title="Move Category"
-                                                                            >
-                                                                                <FolderSymlink size={13} />
-                                                                                <select
-                                                                                    value="move"
-                                                                                    disabled={loading !== null || isOffline}
-                                                                                    onChange={async (e) => {
-                                                                                        const newCat = e.target.value;
-                                                                                        if (newCat !== "move") {
-                                                                                            await handleMoveToolToPosition(price.tool_id, 'end', category, newCat);
-                                                                                        }
-                                                                                    }}
-                                                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
-                                                                                >
-                                                                                    <option value="move" disabled hidden>Move</option>
-                                                                                    {CATEGORY_ORDER.map(cat => (
-                                                                                        <option key={cat} value={cat} disabled={cat === category}>
-                                                                                            {cat}
-                                                                                        </option>
-                                                                                    ))}
-                                                                                </select>
-                                                                            </div>
-                                                                             <button
-                                                                                 type="button"
-                                                                                 onClick={() => handleDeleteTool(price.tool_id)}
-                                                                                 disabled={loading !== null || isOffline}
-                                                                                 className="p-1.5 text-red-50 hover:text-white bg-red-800/90 hover:bg-red-900 border border-red-900 dark:text-red-100 dark:hover:text-white dark:bg-red-950/80 dark:hover:bg-red-950 dark:border-red-900 rounded transition-all shrink-0"
-                                                                                 title={`Delete Entire "${tool ? tool.item : price.tool_id}" Tool`}
-                                                                             >
-                                                                                 <Trash2 size={13} />
-                                                                             </button>
-                                                                        </div>
-                                                                    </td>
-                                                                </tr>
-                                                            )}
+                                                        <React.Fragment key={price.id}>
+                                                             {showGroupHeader && (
+                                                                 <tr
+                                                                     key={`group-header-${price.tool_id}`}
+                                                                     className="bg-[#8e5a7d]/5 dark:bg-slate-800/60 border-y border-[#8e5a7d]/15 dark:border-slate-700/80 font-bold text-xs text-gray-800 dark:text-slate-350"
+                                                                     draggable={editingCategory === category && !isOffline}
+                                                                     onDragStart={(e) => {
+                                                                         setDraggedToolId(price.tool_id);
+                                                                         setDraggedCategory(category);
+                                                                         e.dataTransfer.effectAllowed = 'move';
+                                                                     }}
+                                                                     onDragOver={(e) => {
+                                                                         e.preventDefault();
+                                                                         if (draggedToolId && draggedToolId !== price.tool_id) {
+                                                                             if (dragOverToolId !== price.tool_id) {
+                                                                                 setDragOverToolId(price.tool_id);
+                                                                             }
+                                                                         }
+                                                                     }}
+                                                                     onDrop={(e) => {
+                                                                         e.preventDefault();
+                                                                         if (draggedToolId && draggedToolId !== price.tool_id) {
+                                                                             e.stopPropagation();
+                                                                             handleMoveToolToPosition(draggedToolId, price.tool_id, draggedCategory!, category);
+                                                                         }
+                                                                         setDraggedToolId(null);
+                                                                         setDraggedCategory(null);
+                                                                         setDragOverToolId(null);
+                                                                         setDragOverCategory(null);
+                                                                     }}
+                                                                     onDragEnd={() => {
+                                                                         setDraggedToolId(null);
+                                                                         setDraggedCategory(null);
+                                                                         setDragOverToolId(null);
+                                                                         setDragOverCategory(null);
+                                                                     }}
+                                                                 >
+                                                                     <td className="py-3 px-3" colSpan={2}>
+                                                                         <div className="flex items-center gap-2">
+                                                                             <Menu
+                                                                                 size={14}
+                                                                                 className="text-gray-400 dark:text-slate-500 cursor-grab active:cursor-grabbing hover:text-[#fcb7f0] transition-colors shrink-0"
+                                                                                 title="Drag to reorder tool group"
+                                                                             />
+                                                                             <Folder size={13} className="text-[#8e5a7d] dark:text-[#fcb7f0] shrink-0" />
+                                                                             <span className="font-extrabold text-[#8e5a7d] dark:text-white uppercase tracking-wider text-[10px]">
+                                                                                 {tool ? tool.item : price.tool_id}
+                                                                             </span>
+                                                                         </div>
+                                                                     </td>
+                                                                     <td className="py-3 px-2 text-right font-mono"></td>
+                                                                     <td className="py-3 px-2 text-right font-mono"></td>
+                                                                     <td className="py-3 px-2 text-right font-mono"></td>
+                                                                     <td className="py-3 px-2 text-center"></td>
+                                                                 </tr>
+                                                             )}
                                                             <tr
                                                                 key={price.id}
-                                                            draggable={isEditingRow && !isOffline}
+                                                            draggable={isEditingRow && !isOffline && !isSubtypeTool}
                                                             onDragStart={(e) => {
+                                                                 if (isSubtypeTool) return;
                                                                 setDraggedToolId(price.tool_id);
                                                                 setDraggedCategory(category);
                                                                 e.dataTransfer.effectAllowed = 'move';
@@ -2151,7 +1675,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                             <td className="py-3 px-2">
                                                                 <div className="flex items-center gap-2">
                                                                     {isEditingRow && (
-                                                                        isFirstOccurrence ? (
+                                                                        (isFirstOccurrence && !isSubtypeTool) ? (
                                                                             <Menu
                                                                                 size={14}
                                                                                 className="text-gray-400 dark:text-slate-500 cursor-grab active:cursor-grabbing hover:text-[#fcb7f0] transition-colors shrink-0"
@@ -2376,7 +1900,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                 )}
                                                             </td>
                                                         </tr>
-                                                    </>
+                                                        </React.Fragment>
                                                 );
                                                 })}
                                             </tbody>
@@ -2398,85 +1922,33 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
             {/* Surgery Logic / Rule Management View */}
             {adminTab === 'logic' && (
                 <div className="space-y-4">
-                    {/* Filter and search controls above the cards */}
-                    <div className="flex flex-row items-center justify-between gap-2 w-full flex-wrap sm:flex-nowrap">
-                        {/* Category Filter Tabs styled as floating buttons */}
-                        <div className="flex flex-row flex-nowrap overflow-x-auto no-scrollbar gap-1 max-w-full select-none py-0.5 shrink-0">
-                            {['All', ...categories].map(cat => {
-                                const isSelected = selectedLogicCategory === cat;
-                                const labelMap: Record<string, string> = {
-                                    'All': 'All',
-                                    'Lens Surgery': 'Lens',
-                                    'Retinal Surgery': 'Retina',
-                                    'Glaucoma': 'Glaucoma',
-                                    'Cornea': 'Cornea',
-                                    'Oculoplastics': 'Oculo',
-                                    'Strabismus': 'Strab',
-                                    'Others': 'Others',
-                                };
-                                const displayLabel = labelMap[cat] || cat;
-                                return (
-                                    <button
-                                        key={cat}
-                                        onClick={() => {
-                                            if (editingPriceId !== null && hasPriceRowChanges(editingPriceId)) {
-                                                alert('You have unsaved changes. Please save or cancel your edits first.');
-                                                return;
-                                            }
-                                            setEditingPriceId(null);
-                                            setSelectedLogicCategory(cat);
-                                        }}
-                                        className={`px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-all border ${
-                                            isSelected
-                                                ? 'bg-[#fcb7f0] border-[#fcb7f0] text-slate-800 font-extrabold shadow-sm scale-105'
-                                                : 'bg-white dark:bg-[#151f32] border-gray-100 dark:border-slate-800 text-gray-500 dark:text-slate-400 shadow-sm hover:shadow hover:bg-gray-50 dark:hover:bg-slate-800/40'
-                                        }`}
-                                    >
-                                        {displayLabel}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                        
-                        {/* Search Box & Add Operation Button (shortened) */}
-                        <div className="flex items-center gap-2 max-w-[240px] sm:max-w-xs md:max-w-sm w-full justify-end">
-                            <div className="relative max-w-[150px] sm:max-w-[180px] w-full">
-                                <input
-                                    type="text"
-                                    placeholder="Search operations, keys..."
-                                    value={logicSearch}
-                                    onChange={e => setLogicSearch(e.target.value)}
-                                    className="w-full bg-white dark:bg-[#151f32] border border-gray-100 dark:border-slate-800 rounded-xl pl-8 pr-2.5 py-1.5 text-xs font-semibold shadow-sm outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
-                                />
-                                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
-                            </div>
-                             <button
-                                  onClick={() => {
-                                      if (editingPriceId !== null && hasPriceRowChanges(editingPriceId)) {
-                                          alert('You have unsaved changes. Please save or cancel your edits first.');
-                                          return;
-                                      }
-                                      setEditingPriceId(null);
-                                      if (!isOffline) {
-                                          if (showAddOpForm) {
-                                              handleCloseAddOpForm();
-                                          } else {
-                                              setShowAddOpForm(true);
-                                          }
-                                      }
-                                  }}
-                                 disabled={isOffline}
-                                 className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all border flex items-center gap-1.5 shrink-0 ${
-                                     isOffline 
-                                         ? 'bg-gray-100 dark:bg-slate-800 text-gray-400 dark:text-slate-600 border-gray-200 dark:border-slate-700 cursor-not-allowed opacity-50'
-                                         : 'bg-[#fcb7f0]/20 hover:bg-[#fcb7f0]/40 text-[#8e5a7d] dark:text-[#fcb7f0] border-[#fcb7f0]/30'
-                                 }`}
-                             >
-                                 <Plus size={14} />
-                                 {showAddOpForm ? 'Hide' : 'Add'}
-                             </button>
-                        </div>
-                     </div>
+                    <AdminFeatureToolbar
+                        categories={['All', ...categories]}
+                        selectedCategory={selectedLogicCategory}
+                        onCategoryChange={category => {
+                            if (editingPriceId !== null && hasPriceRowChanges(editingPriceId)) {
+                                alert('You have unsaved changes. Please save or cancel your edits first.');
+                                return;
+                            }
+                            setEditingPriceId(null);
+                            setSelectedLogicCategory(category);
+                        }}
+                        search={logicSearch}
+                        onSearchChange={setLogicSearch}
+                        searchPlaceholder="Search operations, keys..."
+                        addLabel="Add"
+                        addOpen={showAddOpForm}
+                        disabled={isOffline}
+                        onAddToggle={() => {
+                            if (editingPriceId !== null && hasPriceRowChanges(editingPriceId)) {
+                                alert('You have unsaved changes. Please save or cancel your edits first.');
+                                return;
+                            }
+                            setEditingPriceId(null);
+                            if (showAddOpForm) handleCloseAddOpForm();
+                            else setShowAddOpForm(true);
+                        }}
+                    />
                                {/* Add Operation Form Modal */}
                     {showAddOpForm && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn p-4">
@@ -2634,30 +2106,15 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                     key={op.id} 
                                                     className="bg-white dark:bg-[#151f32] rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden transition-colors"
                                                 >
-                                                    {/* Operation Header */}
-                                                     <div 
-                                                         onClick={() => handleOpClick(op.id)}
-                                                         className="p-3 sm:p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50/50 dark:hover:bg-slate-800/20 transition-colors"
-                                                     >
-                                                        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                                                            <span className="text-xs sm:text-sm font-bold text-gray-900 dark:text-white">
-                                                                {op.name}
-                                                            </span>
-                                                            <div className="flex flex-wrap gap-1">
-                                                                {op.keywords.map(kw => (
-                                                                    <span key={kw} className="bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-400 text-[9px] px-1.5 py-0.5 rounded font-mono font-medium">
-                                                                        {kw}
-                                                                    </span>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex items-center gap-3">
-                                                            <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400 dark:text-slate-500 bg-gray-50 dark:bg-slate-900 border border-gray-100 dark:border-slate-800 px-1.5 py-0.5 rounded">
-                                                                {opRules.length} rule{opRules.length !== 1 ? 's' : ''}
-                                                            </span>
-                                                            {isExpanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
-                                                        </div>
-                                                    </div>
+                                                    <OperationHeader
+                                                        operation={op}
+                                                        ruleCount={opRules.length}
+                                                        expanded={isExpanded}
+                                                        disabled={isOffline}
+                                                        onToggle={() => handleOpClick(op.id)}
+                                                        onEdit={() => handleStartEditOp(op)}
+                                                        onDelete={() => handleDeleteOperation(op.id)}
+                                                    />
 
                                                     {/* Expanded Operation Body */}
                                                     {isExpanded && (
@@ -2780,42 +2237,12 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                         </div>
                                                                     </div>
                                                                 ) : (
-                                                                    <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-slate-800/80">
-                                                                        <div className="flex items-center gap-6 text-xs flex-wrap">
-                                                                            <div>
-                                                                                <span className="text-gray-400 dark:text-slate-500 font-bold block mb-0.5 text-[10px]">Name</span>
-                                                                                <span className="font-bold text-gray-900 dark:text-white">{op.name}</span>
-                                                                            </div>
-                                                                            <div>
-                                                                                <span className="text-gray-400 dark:text-slate-500 font-bold block mb-0.5 text-[10px]">Category</span>
-                                                                                <span className="font-bold text-gray-800 dark:text-slate-200">{op.category}</span>
-                                                                            </div>
-                                                                            <div>
-                                                                                <span className="text-gray-400 dark:text-slate-500 font-bold block mb-0.5 text-[10px]">Trigger Keywords</span>
-                                                                                <span className="font-bold text-gray-800 dark:text-slate-200">{op.keywords.join(', ') || '(none)'}</span>
-                                                                            </div>
-                                                                        </div>
-                                                                        <div className="flex gap-2 shrink-0 pt-0.5">
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => !isOffline && handleStartEditOp(op)}
-                                                                                disabled={isOffline}
-                                                                                className="p-1 text-gray-500 hover:text-[#fcb7f0] disabled:opacity-30 disabled:hover:text-gray-500 disabled:cursor-not-allowed transition-colors"
-                                                                                title="Edit details & triggers"
-                                                                            >
-                                                                                <Edit size={14} />
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => !isOffline && handleDeleteOperation(op.id)}
-                                                                                disabled={isOffline}
-                                                                                className="p-1 text-gray-500 hover:text-red-500 disabled:opacity-30 disabled:hover:text-gray-500 disabled:cursor-not-allowed transition-colors"
-                                                                                title="Delete operation"
-                                                                            >
-                                                                                <Trash2 size={14} />
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
+                                                                    <OperationSummary
+                                                                        operation={op}
+                                                                        disabled={isOffline}
+                                                                        onEdit={() => handleStartEditOp(op)}
+                                                                        onDelete={() => handleDeleteOperation(op.id)}
+                                                                    />
                                                                 )}
 
                                                                 {/* Bottom Rules Columns */}
@@ -2829,110 +2256,22 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                         
                                                                         <div className="flex-1 space-y-2 mb-3">
                                                                             {!isEditingDetails ? (
-                                                                                /* Read-only view */
-                                                                                opRules.filter(r => r.target_type === 'tool').length === 0 ? (
-                                                                                    <div className="p-2.5 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
-                                                                                        No surgical tools triggered yet.
-                                                                                    </div>
-                                                                                ) : (
-                                                                                    opRules.filter(r => r.target_type === 'tool').map(rule => {
-                                                                                        const tool = config.tools.find(t => t.id === rule.target_id);
-                                                                                        const targetName = tool ? tool.item : rule.target_id;
-                                                                                        return (
-                                                                                            <div 
-                                                                                                key={rule.id} 
-                                                                                                className="bg-gray-50 dark:bg-slate-800/50 border border-gray-100 dark:border-slate-800/80 p-2.5 rounded-xl flex items-center justify-between gap-3 text-xs"
-                                                                                            >
-                                                                                                <div className="flex flex-col">
-                                                                                                    <span className="font-bold text-gray-800 dark:text-slate-200 text-xs">
-                                                                                                        {targetName}
-                                                                                                    </span>
-                                                                                                    {rule.default_selected_value && (
-                                                                                                        <span className="text-[9px] text-gray-450 dark:text-slate-400 font-semibold mt-0.5">
-                                                                                                            Default: {rule.default_selected_value}
-                                                                                                        </span>
-                                                                                                    )}
-                                                                                                </div>
-                                                                                            </div>
-                                                                                        );
-                                                                                    })
-                                                                                )
+                                                                                <OperationRuleSummary
+                                                                                    rules={opRules}
+                                                                                    targetType="tool"
+                                                                                    tools={config.tools}
+                                                                                    actions={config.actions}
+                                                                                />
                                                                             ) : (
-                                                                                /* Edit Details view */
-                                                                                editOpRules.filter(r => r.target_type === 'tool').length === 0 ? (
-                                                                                    <div className="p-2.5 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
-                                                                                        No surgical tools triggered yet.
-                                                                                    </div>
-                                                                                ) : (
-                                                                                    editOpRules.map((ruleRow, idx) => {
-                                                                                        if (ruleRow.target_type !== 'tool') return null;
-                                                                                        const selectedToolRuleOptions = config.tools.find(t => t.id === ruleRow.target_id)?.options || null;
-                                                                                        return (
-                                                                                            <div key={idx} className="flex gap-2 items-center">
-                                                                                                <div className="relative flex-1">
-                                                                                                    <select
-                                                                                                        value={ruleRow.target_id}
-                                                                                                        onChange={e => {
-                                                                                                            const newId = e.target.value;
-                                                                                                            setEditOpRules(prev => prev.map((item, i) => 
-                                                                                                                i === idx ? { ...item, target_id: newId, default_selected_value: null } : item
-                                                                                                            ));
-                                                                                                        }}
-                                                                                                        className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg pl-2.5 pr-8 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200 appearance-none"
-                                                                                                    >
-                                                                                                        <option value="">- Select Tool -</option>
-                                                                                                        {CATEGORY_ORDER.map(cat => {
-                                                                                                            const catTools = toolRuleOptions.filter(t => t.category === cat);
-                                                                                                            if (catTools.length === 0) return null;
-                                                                                                            return (
-                                                                                                                <optgroup key={cat} label={cat} className="text-gray-500 font-bold bg-white dark:bg-slate-800">
-                                                                                                                    {catTools.map(opt => (
-                                                                                                                        <option key={opt.id} value={opt.id} className="text-gray-900 dark:text-white font-medium">
-                                                                                                                            {opt.name}
-                                                                                                                        </option>
-                                                                                                                    ))}
-                                                                                                                </optgroup>
-                                                                                                            );
-                                                                                                        })}
-                                                                                                    </select>
-                                                                                                    <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                                                                                                </div>
-                                                                                                
-                                                                                                {selectedToolRuleOptions && selectedToolRuleOptions.length > 0 && (
-                                                                                                    <div className="relative min-w-[120px]">
-                                                                                                        <select
-                                                                                                            value={ruleRow.default_selected_value || ''}
-                                                                                                            onChange={e => {
-                                                                                                                const newVal = e.target.value;
-                                                                                                                setEditOpRules(prev => prev.map((item, i) => 
-                                                                                                                    i === idx ? { ...item, default_selected_value: newVal || null } : item
-                                                                                                                ));
-                                                                                                            }}
-                                                                                                            className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg pl-2.5 pr-8 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200 appearance-none"
-                                                                                                        >
-                                                                                                            <option value="">- Selection (Opt) -</option>
-                                                                                                            {selectedToolRuleOptions.map((o: any) => (
-                                                                                                                <option key={o.value} value={o.value}>{o.label}</option>
-                                                                                                            ))}
-                                                                                                        </select>
-                                                                                                        <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                                                                                                    </div>
-                                                                                                )}
-                                                                                                
-                                                                                                <button
-                                                                                                    type="button"
-                                                                                                    onClick={() => {
-                                                                                                        setEditOpRules(prev => prev.filter((_, i) => i !== idx));
-                                                                                                    }}
-                                                                                                    className="text-gray-400 hover:text-red-500 p-1 rounded transition-colors shrink-0"
-                                                                                                    title="Remove this tool trigger"
-                                                                                                >
-                                                                                                    <X size={14} />
-                                                                                                </button>
-                                                                                            </div>
-                                                                                        );
-                                                                                    })
-                                                                                )
+                                                                                <OperationRuleEditor
+                                                                                    rules={editOpRules}
+                                                                                    targetType="tool"
+                                                                                    toolOptions={toolRuleOptions}
+                                                                                    actionOptions={actionRuleOptions}
+                                                                                    categories={CATEGORY_ORDER}
+                                                                                    onChange={(index, changes) => setEditOpRules(prev => prev.map((rule, i) => i === index ? { ...rule, ...changes } : rule))}
+                                                                                    onRemove={index => setEditOpRules(prev => prev.filter((_, i) => i !== index))}
+                                                                                />
                                                                             )}
                                                                         </div>
                                                                         
@@ -2956,74 +2295,24 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                             <span className="w-1 h-2 bg-indigo-400 dark:bg-indigo-500 rounded-full"></span>
                                                                             <span className="text-[9px] font-black uppercase tracking-widest text-indigo-700 dark:text-indigo-400">Pre-Op Actions</span>
                                                                         </div>
-                                                                        
                                                                         <div className="flex-1 space-y-2 mb-3">
                                                                             {!isEditingDetails ? (
-                                                                                /* Read-only view */
-                                                                                opRules.filter(r => r.target_type === 'action').length === 0 ? (
-                                                                                    <div className="p-2.5 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
-                                                                                        No pre-op actions triggered yet.
-                                                                                    </div>
-                                                                                ) : (
-                                                                                    opRules.filter(r => r.target_type === 'action').map(rule => {
-                                                                                        const action = config.actions.find(a => a.id === rule.target_id);
-                                                                                        const targetName = action ? action.item : rule.target_id;
-                                                                                        return (
-                                                                                            <div 
-                                                                                                key={rule.id} 
-                                                                                                className="bg-gray-50 dark:bg-slate-800/50 border border-gray-100 dark:border-slate-800/80 p-2.5 rounded-xl flex items-center justify-between gap-3 text-xs"
-                                                                                            >
-                                                                                                <span className="font-bold text-gray-800 dark:text-slate-200 text-xs">
-                                                                                                    {targetName}
-                                                                                                </span>
-                                                                                            </div>
-                                                                                        );
-                                                                                    })
-                                                                                )
+                                                                                <OperationRuleSummary
+                                                                                    rules={opRules}
+                                                                                    targetType="action"
+                                                                                    tools={config.tools}
+                                                                                    actions={config.actions}
+                                                                                />
                                                                             ) : (
-                                                                                /* Edit Details view */
-                                                                                editOpRules.filter(r => r.target_type === 'action').length === 0 ? (
-                                                                                    <div className="p-2.5 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
-                                                                                        No pre-op actions triggered yet.
-                                                                                    </div>
-                                                                                ) : (
-                                                                                    editOpRules.map((ruleRow, idx) => {
-                                                                                        if (ruleRow.target_type !== 'action') return null;
-                                                                                        return (
-                                                                                            <div key={idx} className="flex gap-2 items-center">
-                                                                                                <div className="relative flex-1">
-                                                                                                    <select
-                                                                                                        value={ruleRow.target_id}
-                                                                                                        onChange={e => {
-                                                                                                            const newId = e.target.value;
-                                                                                                            setEditOpRules(prev => prev.map((item, i) => 
-                                                                                                                i === idx ? { ...item, target_id: newId } : item
-                                                                                                            ));
-                                                                                                        }}
-                                                                                                        className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg pl-2.5 pr-8 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200 appearance-none"
-                                                                                                    >
-                                                                                                        <option value="">- Select Action -</option>
-                                                                                                        {actionRuleOptions.map(opt => (
-                                                                                                            <option key={opt.id} value={opt.id}>{opt.name}</option>
-                                                                                                        ))}
-                                                                                                    </select>
-                                                                                                    <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                                                                                                </div>
-                                                                                                
-                                                                                                <button
-                                                                                                    type="button"
-                                                                                                    onClick={() => {
-                                                                                                        setEditOpRules(prev => prev.filter((_, i) => i !== idx));
-                                                                                                    }}
-                                                                                                    className="text-gray-400 hover:text-red-500 p-1 rounded transition-colors shrink-0"
-                                                                                                    title="Remove this action trigger"
-                                                                                                >
-                                                                                                    <X size={14} />
-                                                                                                </button>
-                                                                                            </div>
-                                                                                        );
-                                                                                    })
-                                                                                )
+                                                                                <OperationRuleEditor
+                                                                                    rules={editOpRules}
+                                                                                    targetType="action"
+                                                                                    toolOptions={toolRuleOptions}
+                                                                                    actionOptions={actionRuleOptions}
+                                                                                    categories={CATEGORY_ORDER}
+                                                                                    onChange={(index, changes) => setEditOpRules(prev => prev.map((rule, i) => i === index ? { ...rule, ...changes } : rule))}
+                                                                                    onRemove={index => setEditOpRules(prev => prev.filter((_, i) => i !== index))}
+                                                                                />
                                                                             )}
                                                                         </div>
                                                                         
@@ -3086,6 +2375,6 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                     </div>
                 </div>
             )}
-        </div>
+        </AdminShell>
     );
 }

@@ -75,6 +75,8 @@ insert into actions (id, item) values
 ('key-mmc', 'Key MMC');
 
 -- 4. Seed Tools Table
+-- Keep this seed aligned with toolCatalog.ts (the application canonical catalog).
+-- The SQL mirror intentionally contains no legacy `mm` tool.
 insert into tools (id, item, type, options, default_value, sort_order, category) values
 ('ppv-set', 'PPV set', 'radio', '[{"label": "Constellation", "value": "Constellation"}, {"label": "Stellaris", "value": "Stellaris"}]'::jsonb, '"Stellaris"'::jsonb, 1, 'Retinal Surgery'),
 ('soft-tip', 'Soft tip', 'checkbox', null, null, 2, 'Retinal Surgery'),
