@@ -1797,7 +1797,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                     }
                                                 }}
                                                 placeholder="e.g. Centurion Active Sentry"
-                                                className="w-full bg-gray-50 dark:bg-slate-850 border border-gray-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
+                                                className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] text-gray-900 dark:text-slate-200 transition-all"
                                                 required
                                             />
                                         </div>
@@ -1808,7 +1808,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                 value={newSubtypeKey}
                                                 onChange={e => setNewSubtypeKey(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
                                                 placeholder="e.g. active-sentry"
-                                                className="w-full bg-gray-50 dark:bg-slate-850 border border-gray-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
+                                                className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] text-gray-900 dark:text-slate-200 transition-all"
                                                 required
                                             />
                                         </div>
@@ -1821,7 +1821,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                 value={newSubtypeCsmbs}
                                                 onChange={e => setNewSubtypeCsmbs(Number(e.target.value))}
                                                 placeholder="0"
-                                                className="w-full bg-gray-50 dark:bg-slate-850 border border-gray-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
+                                                className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] text-gray-900 dark:text-slate-200 transition-all"
                                                 min="0"
                                                 required
                                             />
@@ -1833,7 +1833,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                 value={newSubtypeSss}
                                                 onChange={e => setNewSubtypeSss(Number(e.target.value))}
                                                 placeholder="0"
-                                                className="w-full bg-gray-50 dark:bg-slate-850 border border-gray-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
+                                                className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] text-gray-900 dark:text-slate-200 transition-all"
                                                 min="0"
                                                 required
                                             />
@@ -1845,7 +1845,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                 value={newSubtypeUcs}
                                                 onChange={e => setNewSubtypeUcs(Number(e.target.value))}
                                                 placeholder="0"
-                                                className="w-full bg-gray-50 dark:bg-slate-855 border border-gray-255 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
+                                                className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] text-gray-900 dark:text-slate-200 transition-all"
                                                 min="0"
                                                 required
                                             />
@@ -1957,8 +1957,8 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                     `}
                                 >
                                     <div className="flex justify-between items-center -mx-4 sm:-mx-5 -mt-4 sm:-mt-5 mb-4 px-4 sm:px-5 py-3 border-b border-gray-100 dark:border-slate-800 bg-gray-50/40 dark:bg-slate-800/20 rounded-t-2xl">
-                                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 flex items-center gap-2">
-                                            <span className="w-1.5 h-3 bg-[#fcb7f0] rounded-full"></span>
+                                        <h3 className="text-[10px] font-extrabold uppercase tracking-wider text-[#8e5a7d] dark:text-[#fcb7f0] flex items-center gap-2">
+                                            <span className="w-1.5 h-3 bg-[#8e5a7d] dark:bg-[#fcb7f0] rounded-full"></span>
                                             {(() => {
                                                 if (category.toLowerCase().includes('surgery')) return category;
                                                 if (category === 'Generals') return 'General Surgery';
@@ -1971,10 +1971,10 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                     <button
                                                         onClick={() => handleSaveCategoryPrices(category)}
                                                         disabled={loading !== null}
-                                                        className="p-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded transition-all flex items-center justify-center shadow-sm disabled:opacity-50"
+                                                        className="p-1 text-emerald-500 hover:text-emerald-600 transition-colors disabled:opacity-50"
                                                         title="Save All"
                                                     >
-                                                        <Save size={12} />
+                                                        <Save size={14} />
                                                     </button>
                                                     <button
                                                         onClick={() => {
@@ -1985,10 +1985,10 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                             setEditingCategory(null);
                                                         }}
                                                         disabled={loading !== null}
-                                                        className="p-1.5 bg-gray-400 hover:bg-gray-500 text-white rounded transition-all flex items-center justify-center shadow-sm disabled:opacity-50"
+                                                        className="p-1 text-gray-400 hover:text-gray-500 transition-colors disabled:opacity-50"
                                                         title="Cancel"
                                                     >
-                                                        <X size={12} />
+                                                        <X size={14} />
                                                     </button>
                                                 </>
                                             ) : (
@@ -2001,9 +2001,10 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                         handleStartEditCategory(category);
                                                     }}
                                                     disabled={loading !== null || isOffline || editingPriceId !== null}
-                                                    className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-500 dark:text-slate-400 rounded text-[10px] font-bold transition-all disabled:opacity-50"
+                                                    className="p-1 text-gray-500 hover:text-[#fcb7f0] disabled:opacity-30 disabled:hover:text-gray-500 disabled:cursor-not-allowed transition-colors"
+                                                    title="Edit category prices"
                                                 >
-                                                    Edit
+                                                    <Edit size={14} />
                                                 </button>
                                             )}
                                         </div>
@@ -2065,6 +2066,25 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                     <td className="py-3 px-2 text-right font-mono"></td>
                                                                     <td className="py-3 px-2 text-center">
                                                                         <div className="flex items-center justify-center gap-2">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    if (tool) {
+                                                                                        setActiveAddSubtypeTool(tool);
+                                                                                        setNewSubtypeDisplayName('');
+                                                                                        setNewSubtypeKey('');
+                                                                                        setNewSubtypeCsmbs(0);
+                                                                                        setNewSubtypeSss(0);
+                                                                                        setNewSubtypeUcs(0);
+                                                                                    }
+                                                                                }}
+                                                                                disabled={loading !== null || isOffline}
+                                                                                className="px-2 py-1 bg-[#fcb7f0]/20 hover:bg-[#fcb7f0]/40 text-[#8e5a7d] dark:text-[#fcb7f0] border border-[#fcb7f0]/30 rounded text-[10px] font-bold transition-all flex items-center gap-1 shrink-0"
+                                                                                title={`Add Subtype Option to "${tool ? tool.item : price.tool_id}"`}
+                                                                            >
+                                                                                <Plus size={12} />
+                                                                                Add Subtype
+                                                                            </button>
                                                                             <div 
                                                                                 className={`relative p-1 text-[#8e5a7d] hover:text-[#734464] hover:bg-[#fcb7f0]/10 dark:text-[#fcb7f0] dark:hover:text-[#f78de3] dark:hover:bg-[#fcb7f0]/5 rounded transition-all flex items-center justify-center ${
                                                                                     (loading !== null)
@@ -2143,7 +2163,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                 transition-all duration-200
                                                                 ${draggedToolId === price.tool_id ? 'opacity-30 bg-gray-100 dark:bg-slate-800/40' : ''}
                                                                 ${dragOverToolId === price.tool_id ? 'bg-[#fcb7f0]/10 dark:bg-[#fcb7f0]/5' : ''}
-                                                                hover:bg-gray-50/50 dark:hover:bg-slate-800/30
+                                                                ${isEditingRow ? 'bg-[#fcb7f0]/5 dark:bg-[#fcb7f0]/10' : 'hover:bg-gray-50/50 dark:hover:bg-slate-800/30'}
                                                             `}
                                                         >
                                                             <td className="py-3 px-2">
@@ -2171,11 +2191,11 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                                     type="text"
                                                                                     value={rowData.displayName}
                                                                                     onChange={e => handleUpdateEditField(price.id, 'displayName', e.target.value, price, tool)}
-                                                                                    className="w-full p-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded text-xs font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] text-gray-900 dark:text-white"
+                                                                                    className="w-full px-2 py-1 border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 rounded-lg text-xs font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] text-gray-900 dark:text-slate-200 transition-colors"
                                                                                     placeholder="Display Name"
                                                                                 />
                                                                             </div>
-                                                                            <span className="text-[9px] text-gray-455 dark:text-slate-500 font-mono pl-1">
+                                                                            <span className="text-[9px] text-gray-400 dark:text-slate-500 font-mono pl-1">
                                                                                 ID: {price.tool_id}
                                                                             </span>
                                                                         </div>
@@ -2206,7 +2226,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                         type="number"
                                                                         value={rowData.csmbs}
                                                                         onChange={e => handleUpdateEditField(price.id, 'csmbs', Number(e.target.value), price, tool)}
-                                                                        className="w-16 sm:w-20 text-right p-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] text-gray-900 dark:text-white"
+                                                                        className="w-16 sm:w-20 text-right px-2 py-1 border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 rounded-lg text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] text-gray-900 dark:text-slate-200 transition-colors"
                                                                     />
                                                                 ) : (
                                                                     <span className="font-mono font-semibold text-gray-900 dark:text-slate-200">
@@ -2220,7 +2240,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                         type="number"
                                                                         value={rowData.sss}
                                                                         onChange={e => handleUpdateEditField(price.id, 'sss', Number(e.target.value), price, tool)}
-                                                                        className="w-16 sm:w-20 text-right p-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] text-gray-900 dark:text-white"
+                                                                        className="w-16 sm:w-20 text-right px-2 py-1 border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 rounded-lg text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] text-gray-900 dark:text-slate-200 transition-colors"
                                                                     />
                                                                 ) : (
                                                                     <span className="font-mono font-semibold text-gray-900 dark:text-slate-200">
@@ -2234,7 +2254,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                         type="number"
                                                                         value={rowData.ucs}
                                                                         onChange={e => handleUpdateEditField(price.id, 'ucs', Number(e.target.value), price, tool)}
-                                                                        className="w-16 sm:w-20 text-right p-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] text-gray-900 dark:text-white"
+                                                                        className="w-16 sm:w-20 text-right px-2 py-1 border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 rounded-lg text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] text-gray-900 dark:text-slate-200 transition-colors"
                                                                     />
                                                                 ) : (
                                                                     <span className="font-mono font-semibold text-gray-900 dark:text-slate-200">
@@ -2246,28 +2266,45 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                 {isEditingRow ? (
                                                                     editingCategory === category ? (
                                                                         <div className="flex items-center justify-center gap-1.5">
-                                                                                {/* The Add Subtype Option button was moved to a separate row at the bottom of the group */}
-                                                                               {price.sub_key ? (
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        onClick={() => handleDeleteSubtype(price)}
-                                                                                        disabled={loading !== null || isOffline}
-                                                                                        className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
-                                                                                        title={`Delete Subtype "${price.sub_key}"`}
-                                                                                    >
-                                                                                        <Trash2 size={13} />
-                                                                                    </button>
-                                                                                ) : (
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        onClick={() => handleDeleteTool(price.tool_id)}
-                                                                                        disabled={loading !== null || isOffline}
-                                                                                        className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
-                                                                                        title="Delete Tool"
-                                                                                    >
-                                                                                        <Trash2 size={13} />
-                                                                                    </button>
-                                                                                )}
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    if (tool) {
+                                                                                        setActiveAddSubtypeTool(tool);
+                                                                                        setNewSubtypeDisplayName('');
+                                                                                        setNewSubtypeKey('');
+                                                                                        setNewSubtypeCsmbs(0);
+                                                                                        setNewSubtypeSss(0);
+                                                                                        setNewSubtypeUcs(0);
+                                                                                    }
+                                                                                }}
+                                                                                disabled={loading !== null || isOffline}
+                                                                                className="p-1 text-[#8e5a7d] hover:text-[#734464] hover:bg-[#fcb7f0]/10 dark:text-[#fcb7f0] dark:hover:bg-[#fcb7f0]/5 rounded transition-colors disabled:opacity-50"
+                                                                                title={`Add Subtype Option to "${tool ? tool.item : price.tool_id}"`}
+                                                                            >
+                                                                                <Plus size={13} />
+                                                                            </button>
+                                                                            {price.sub_key ? (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleDeleteSubtype(price)}
+                                                                                    disabled={loading !== null || isOffline}
+                                                                                    className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
+                                                                                    title={`Delete Subtype "${price.sub_key}"`}
+                                                                                >
+                                                                                    <Trash2 size={13} />
+                                                                                </button>
+                                                                            ) : (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleDeleteTool(price.tool_id)}
+                                                                                    disabled={loading !== null || isOffline}
+                                                                                    className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
+                                                                                    title="Delete Tool"
+                                                                                >
+                                                                                    <Trash2 size={13} />
+                                                                                </button>
+                                                                            )}
                                                                         </div>
                                                                     ) : (
                                                                         <div className="flex items-center justify-center gap-1.5">
