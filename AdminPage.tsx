@@ -2040,6 +2040,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                      const isNewReuseTool = tool?.options?.some((o: any) => o.value === NEW_REUSED_OPTIONS.NEW || o.value === NEW_REUSED_OPTIONS.REUSED);
                                                      const toolPricesCount = items.filter(item => item.tool_id === price.tool_id).length;
                                                      const hasSubtypes = toolPricesCount > 1 && !isNewReuseTool;
+                                                     const isSubtypeTool = (tool?.type === 'radio') || (tool?.options && tool.options.length > 0 && !isNewReuseTool) || hasSubtypes;
                                                      const showGroupHeader = hasSubtypes && isFirstOccurrence && (editingCategory === category);
                                                     const rowData = editPricesData[price.id] || {
                                                         displayName: price.display_name || getToolDisplayName(price.tool_id, tool ? tool.item : price.tool_id, price.sub_key),
@@ -2066,25 +2067,6 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                     <td className="py-3 px-2 text-right font-mono"></td>
                                                                     <td className="py-3 px-2 text-center">
                                                                         <div className="flex items-center justify-center gap-2">
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    if (tool) {
-                                                                                        setActiveAddSubtypeTool(tool);
-                                                                                        setNewSubtypeDisplayName('');
-                                                                                        setNewSubtypeKey('');
-                                                                                        setNewSubtypeCsmbs(0);
-                                                                                        setNewSubtypeSss(0);
-                                                                                        setNewSubtypeUcs(0);
-                                                                                    }
-                                                                                }}
-                                                                                disabled={loading !== null || isOffline}
-                                                                                className="px-2 py-1 bg-[#fcb7f0]/20 hover:bg-[#fcb7f0]/40 text-[#8e5a7d] dark:text-[#fcb7f0] border border-[#fcb7f0]/30 rounded text-[10px] font-bold transition-all flex items-center gap-1 shrink-0"
-                                                                                title={`Add Subtype Option to "${tool ? tool.item : price.tool_id}"`}
-                                                                            >
-                                                                                <Plus size={12} />
-                                                                                Add Subtype
-                                                                            </button>
                                                                             <div 
                                                                                 className={`relative p-1 text-[#8e5a7d] hover:text-[#734464] hover:bg-[#fcb7f0]/10 dark:text-[#fcb7f0] dark:hover:text-[#f78de3] dark:hover:bg-[#fcb7f0]/5 rounded transition-all flex items-center justify-center ${
                                                                                     (loading !== null)
@@ -2266,24 +2248,34 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                 {isEditingRow ? (
                                                                     editingCategory === category ? (
                                                                         <div className="flex items-center justify-center gap-1.5">
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    if (tool) {
-                                                                                        setActiveAddSubtypeTool(tool);
-                                                                                        setNewSubtypeDisplayName('');
-                                                                                        setNewSubtypeKey('');
-                                                                                        setNewSubtypeCsmbs(0);
-                                                                                        setNewSubtypeSss(0);
-                                                                                        setNewSubtypeUcs(0);
-                                                                                    }
-                                                                                }}
-                                                                                disabled={loading !== null || isOffline}
-                                                                                className="p-1 text-[#8e5a7d] hover:text-[#734464] hover:bg-[#fcb7f0]/10 dark:text-[#fcb7f0] dark:hover:bg-[#fcb7f0]/5 rounded transition-colors disabled:opacity-50"
-                                                                                title={`Add Subtype Option to "${tool ? tool.item : price.tool_id}"`}
+                                                                            <div 
+                                                                                className={`relative p-1 text-[#8e5a7d] hover:text-[#734464] hover:bg-[#fcb7f0]/10 dark:text-[#fcb7f0] dark:hover:text-[#f78de3] dark:hover:bg-[#fcb7f0]/5 rounded transition-all flex items-center justify-center ${
+                                                                                    (loading !== null)
+                                                                                        ? 'opacity-50 cursor-not-allowed'
+                                                                                        : 'cursor-pointer'
+                                                                                }`}
+                                                                                title="Move Category"
                                                                             >
-                                                                                <Plus size={13} />
-                                                                            </button>
+                                                                                <FolderSymlink size={13} />
+                                                                                <select
+                                                                                    value="move"
+                                                                                    disabled={loading !== null || isOffline}
+                                                                                    onChange={async (e) => {
+                                                                                        const newCat = e.target.value;
+                                                                                        if (newCat !== "move") {
+                                                                                            await handleMoveToolToPosition(price.tool_id, 'end', category, newCat);
+                                                                                        }
+                                                                                    }}
+                                                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                                                                                >
+                                                                                    <option value="move" disabled hidden>Move</option>
+                                                                                    {CATEGORY_ORDER.map(cat => (
+                                                                                        <option key={cat} value={cat} disabled={cat === category}>
+                                                                                            {cat}
+                                                                                        </option>
+                                                                                    ))}
+                                                                                </select>
+                                                                            </div>
                                                                             {price.sub_key ? (
                                                                                 <button
                                                                                     type="button"
