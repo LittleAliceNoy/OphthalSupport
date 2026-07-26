@@ -2832,7 +2832,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                                 /* Edit Details view */
                                                                                 editOpRules.filter(r => r.target_type === 'tool').length === 0 ? (
                                                                                     <div className="p-2.5 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
-                                                                                        No surgical tools queued. Click "+ Add Surgical Tool" below.
+                                                                                        No surgical tools triggered yet.
                                                                                     </div>
                                                                                 ) : (
                                                                                     editOpRules.map((ruleRow, idx) => {
@@ -2955,7 +2955,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                                 /* Edit Details view */
                                                                                 editOpRules.filter(r => r.target_type === 'action').length === 0 ? (
                                                                                     <div className="p-2.5 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
-                                                                                        No pre-op actions queued. Click "+ Add Pre-Op Action" below.
+                                                                                        No pre-op actions triggered yet.
                                                                                     </div>
                                                                                 ) : (
                                                                                     editOpRules.map((ruleRow, idx) => {
