@@ -2171,7 +2171,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                                     type="text"
                                                                                     value={rowData.displayName}
                                                                                     onChange={e => handleUpdateEditField(price.id, 'displayName', e.target.value, price, tool)}
-                                                                                    className="w-full p-1 border border-gray-250 dark:border-slate-700 bg-white dark:bg-slate-850 rounded text-xs font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200"
+                                                                                    className="w-full p-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded text-xs font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] text-gray-900 dark:text-white"
                                                                                     placeholder="Display Name"
                                                                                 />
                                                                             </div>
@@ -2206,7 +2206,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                         type="number"
                                                                         value={rowData.csmbs}
                                                                         onChange={e => handleUpdateEditField(price.id, 'csmbs', Number(e.target.value), price, tool)}
-                                                                        className="w-16 sm:w-20 text-right p-1 border border-gray-205 dark:border-slate-700 bg-white dark:bg-slate-850 rounded text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0]"
+                                                                        className="w-16 sm:w-20 text-right p-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] text-gray-900 dark:text-white"
                                                                     />
                                                                 ) : (
                                                                     <span className="font-mono font-semibold text-gray-900 dark:text-slate-200">
@@ -2220,7 +2220,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                         type="number"
                                                                         value={rowData.sss}
                                                                         onChange={e => handleUpdateEditField(price.id, 'sss', Number(e.target.value), price, tool)}
-                                                                        className="w-16 sm:w-20 text-right p-1 border border-gray-205 dark:border-slate-700 bg-white dark:bg-slate-850 rounded text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0]"
+                                                                        className="w-16 sm:w-20 text-right p-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] text-gray-900 dark:text-white"
                                                                     />
                                                                 ) : (
                                                                     <span className="font-mono font-semibold text-gray-900 dark:text-slate-200">
@@ -2234,7 +2234,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                         type="number"
                                                                         value={rowData.ucs}
                                                                         onChange={e => handleUpdateEditField(price.id, 'ucs', Number(e.target.value), price, tool)}
-                                                                        className="w-16 sm:w-20 text-right p-1 border border-gray-205 dark:border-slate-700 bg-white dark:bg-slate-850 rounded text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0]"
+                                                                        className="w-16 sm:w-20 text-right p-1 border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded text-xs font-mono font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] text-gray-900 dark:text-white"
                                                                     />
                                                                 ) : (
                                                                     <span className="font-mono font-semibold text-gray-900 dark:text-slate-200">
@@ -2812,7 +2812,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                                         return (
                                                                                             <div 
                                                                                                 key={rule.id} 
-                                                                                                className="bg-white dark:bg-[#111827] border border-gray-100 dark:border-slate-800/60 p-2.5 rounded-xl flex items-center justify-between gap-3 text-xs"
+                                                                                                className="bg-gray-50 dark:bg-slate-800/50 border border-gray-100 dark:border-slate-800/80 p-2.5 rounded-xl flex items-center justify-between gap-3 text-xs"
                                                                                             >
                                                                                                 <div className="flex flex-col">
                                                                                                     <span className="font-bold text-gray-800 dark:text-slate-200 text-xs">
@@ -2942,7 +2942,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                                         return (
                                                                                             <div 
                                                                                                 key={rule.id} 
-                                                                                                className="bg-white dark:bg-[#111827] border border-gray-100 dark:border-slate-800/60 p-2.5 rounded-xl flex items-center justify-between gap-3 text-xs"
+                                                                                                className="bg-gray-50 dark:bg-slate-800/50 border border-gray-100 dark:border-slate-800/80 p-2.5 rounded-xl flex items-center justify-between gap-3 text-xs"
                                                                                             >
                                                                                                 <span className="font-bold text-gray-800 dark:text-slate-200 text-xs">
                                                                                                     {targetName}
