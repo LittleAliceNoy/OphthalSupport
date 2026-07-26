@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     Settings,
     Plus,
@@ -15,7 +15,8 @@ import {
     RefreshCw,
     Play,
     Menu,
-    FolderSymlink
+    FolderSymlink,
+    Folder
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { DBTool, DBAction, DBOperation, DBRule, DBPrice } from './configService';
@@ -111,9 +112,11 @@ interface AdminPageProps {
         prices: DBPrice[];
     };
     onRefresh: () => Promise<void>;
+    isOffline: boolean;
+    onEditingChange: (isEditing: boolean) => void;
 }
 
-export default function AdminPage({ config, onRefresh }: AdminPageProps) {
+export default function AdminPage({ config, onRefresh, isOffline, onEditingChange }: AdminPageProps) {
     const [adminTab, setAdminTab] = useState<'prices' | 'logic'>('prices');
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
     const [loading, setLoading] = useState<string | null>(null); // tracks active operation description
@@ -129,12 +132,66 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
     const [logicSearch, setLogicSearch] = useState('');
     const [selectedLogicCategory, setSelectedLogicCategory] = useState<'All' | string>('All');
     const [editingCategory, setEditingCategory] = useState<string | null>(null);
+    const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
     const [editPricesData, setEditPricesData] = useState<Record<string, {
         displayName: string;
         csmbs: number;
         sss: number;
         ucs: number;
     }>>({});
+
+    const hasCategoryChanges = (cat: string): boolean => {
+        const catPrices = categorizedPrices[cat] || [];
+        for (const p of catPrices) {
+            const current = editPricesData[p.id];
+            if (!current) continue;
+            const tool = config.tools.find(t => t.id === p.tool_id);
+            const originalDispName = p.display_name || getToolDisplayName(p.tool_id, tool ? tool.item : p.tool_id, p.sub_key);
+            if (
+                current.displayName !== originalDispName ||
+                current.csmbs !== p.csmbs_price ||
+                current.sss !== p.sss_price ||
+                current.ucs !== p.ucs_price
+            ) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const hasPriceRowChanges = (priceId: string): boolean => {
+        const originalPrice = config.prices.find(p => p.id === priceId);
+        if (!originalPrice) return false;
+        const current = editPricesData[priceId];
+        if (!current) return false;
+        const tool = config.tools.find(t => t.id === originalPrice.tool_id);
+        const originalDispName = originalPrice.display_name || getToolDisplayName(originalPrice.tool_id, tool ? tool.item : originalPrice.tool_id, originalPrice.sub_key);
+        return (
+            current.displayName !== originalDispName ||
+            current.csmbs !== originalPrice.csmbs_price ||
+            current.sss !== originalPrice.sss_price ||
+            current.ucs !== originalPrice.ucs_price
+        );
+    };
+
+    const hasUnsavedChanges = (): boolean => {
+        if (editingCategory) {
+            return hasCategoryChanges(editingCategory);
+        }
+        if (editingPriceId) {
+            return hasPriceRowChanges(editingPriceId);
+        }
+        return false;
+    };
+
+    useEffect(() => {
+        if (onEditingChange) {
+            onEditingChange(
+                (editingCategory !== null && hasCategoryChanges(editingCategory)) ||
+                (editingPriceId !== null && hasPriceRowChanges(editingPriceId))
+            );
+        }
+    }, [editingCategory, editingPriceId, editPricesData, onEditingChange]);
 
     // Add Tool Form States
     const [showAddToolForm, setShowAddToolForm] = useState(false);
@@ -156,6 +213,12 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
     const [newToolSubtypes, setNewToolSubtypes] = useState<NewSubtype[]>([
         { subKey: '', displayName: '', csmbs: 0, sss: 0, ucs: 0 }
     ]);
+    const [activeAddSubtypeTool, setActiveAddSubtypeTool] = useState<DBTool | null>(null);
+    const [newSubtypeKey, setNewSubtypeKey] = useState('');
+    const [newSubtypeDisplayName, setNewSubtypeDisplayName] = useState('');
+    const [newSubtypeCsmbs, setNewSubtypeCsmbs] = useState<number>(0);
+    const [newSubtypeSss, setNewSubtypeSss] = useState<number>(0);
+    const [newSubtypeUcs, setNewSubtypeUcs] = useState<number>(0);
 
     const handleAddSubtypeRow = () => {
         setNewToolSubtypes([
@@ -183,6 +246,30 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                 .replace(/(^-|-$)+/g, '');
         }
         setNewToolSubtypes(updated);
+    };
+
+    const handleCloseAddToolForm = () => {
+        const hasInputs = newToolDisplayName.trim() || 
+            newToolId.trim() || 
+            newToolCsmbs > 0 || 
+            newToolSss > 0 || 
+            newToolUcs > 0 || 
+            newToolSubtypes.some(s => s.displayName.trim() || s.subKey.trim() || s.csmbs > 0 || s.sss > 0 || s.ucs > 0);
+
+        if (hasInputs) {
+            const confirmClose = window.confirm('You have unsaved changes in the Add Tool form. Are you sure you want to discard them?');
+            if (!confirmClose) return;
+        }
+        setShowAddToolForm(false);
+        // reset form
+        setNewToolDisplayName('');
+        setNewToolId('');
+        setNewToolCategory('Generals');
+        setNewToolCsmbs(0);
+        setNewToolSss(0);
+        setNewToolUcs(0);
+        setNewToolType('checkbox');
+        setNewToolSubtypes([{ subKey: '', displayName: '', csmbs: 0, sss: 0, ucs: 0 }]);
     };
 
     // Drag and Drop States
@@ -251,6 +338,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
 
     const handleStartEditCategory = (cat: string) => {
         setEditingCategory(cat);
+        setEditingPriceId(null);
         const categoryItems = categorizedPrices[cat] || [];
         const initialData: Record<string, {
             displayName: string;
@@ -332,6 +420,83 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
 
                     showToast(`Prices in "${cat}" updated! Run SQL to enable name changes: ALTER TABLE tool_prices ADD COLUMN display_name VARCHAR;`, 'error');
                     setEditingCategory(null);
+                    await onRefresh();
+                } catch (fallbackErr: any) {
+                    showToast(fallbackErr.message || 'Error updating prices', 'error');
+                }
+            } else {
+                showToast(err.message || 'Error updating details', 'error');
+            }
+        } finally {
+            setLoading(null);
+        }
+    };
+
+    const handleStartEditPriceRow = (price: DBPrice) => {
+        setEditingPriceId(price.id);
+        setEditingCategory(null);
+        const tool = config.tools.find(t => t.id === price.tool_id);
+        const dispName = price.display_name || getToolDisplayName(price.tool_id, tool ? tool.item : price.tool_id, price.sub_key);
+        setEditPricesData(prev => ({
+            ...prev,
+            [price.id]: {
+                displayName: dispName,
+                csmbs: price.csmbs_price,
+                sss: price.sss_price,
+                ucs: price.ucs_price
+            }
+        }));
+    };
+
+    const handleSavePriceRow = async (priceId: string) => {
+        const data = editPricesData[priceId];
+        if (!data) {
+            setEditingPriceId(null);
+            return;
+        }
+        // validate
+        if (data.csmbs < 0 || data.sss < 0 || data.ucs < 0) {
+            showToast('Prices must be non-negative numbers', 'error');
+            return;
+        }
+        if (!data.displayName.trim()) {
+            showToast('Tool name is required', 'error');
+            return;
+        }
+
+        setLoading('Saving tool prices...');
+        try {
+            const { error } = await supabase
+                .from('tool_prices')
+                .update({
+                    csmbs_price: Number(data.csmbs),
+                    sss_price: Number(data.sss),
+                    ucs_price: Number(data.ucs),
+                    display_name: data.displayName.trim()
+                })
+                .eq('id', priceId);
+
+            if (error) throw error;
+
+            showToast(`Tool prices updated successfully`, 'success');
+            setEditingPriceId(null);
+            await onRefresh();
+        } catch (err: any) {
+            if (err.message?.includes('column "display_name"') || err.code === '42703') {
+                // Fallback: update without display_name
+                try {
+                    const { error: fallbackErr } = await supabase
+                        .from('tool_prices')
+                        .update({
+                            csmbs_price: Number(data.csmbs),
+                            sss_price: Number(data.sss),
+                            ucs_price: Number(data.ucs)
+                        })
+                        .eq('id', priceId);
+                    if (fallbackErr) throw fallbackErr;
+
+                    showToast(`Prices updated! Run SQL to enable name changes: ALTER TABLE tool_prices ADD COLUMN display_name VARCHAR;`, 'error');
+                    setEditingPriceId(null);
                     await onRefresh();
                 } catch (fallbackErr: any) {
                     showToast(fallbackErr.message || 'Error updating prices', 'error');
@@ -457,7 +622,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                         default_value: defaultValue
                     });
                 if (retryErr) throw retryErr;
-                showToast('Tool added to database! Run SQL to enable category changes: ALTER TABLE tools ADD COLUMN category VARCHAR;', 'warning');
+                showToast('Tool added to database! Run SQL to enable category changes: ALTER TABLE tools ADD COLUMN category VARCHAR;', 'error');
             } else if (toolErr) {
                 throw toolErr;
             }
@@ -526,7 +691,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                             ucs_price: Number(newToolUcs)
                         });
                     if (retryErr) throw retryErr;
-                    showToast('Tool added, but display name not saved in pricing. Run SQL: ALTER TABLE tool_prices ADD COLUMN display_name VARCHAR;', 'warning');
+                    showToast('Tool added, but display name not saved in pricing. Run SQL: ALTER TABLE tool_prices ADD COLUMN display_name VARCHAR;', 'error');
                 } else if (priceErr) {
                     throw priceErr;
                 }
@@ -578,6 +743,137 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
             await onRefresh();
         } catch (err: any) {
             showToast(err.message || 'Error deleting tool', 'error');
+        } finally {
+            setLoading(null);
+        }
+    };
+
+    const handleDeleteSubtype = async (priceRow: DBPrice) => {
+        const confirmDelete = window.confirm(`Are you sure you want to delete the subtype "${priceRow.sub_key}" of tool "${priceRow.tool_id}"? This will delete this specific subtype price.`);
+        if (!confirmDelete) return;
+
+        setLoading('Deleting subtype...');
+        try {
+            // 1. Delete price row from tool_prices
+            const { error: priceErr } = await supabase
+                .from('tool_prices')
+                .delete()
+                .eq('id', priceRow.id);
+            if (priceErr) throw priceErr;
+
+            // 2. Fetch tool options and update options array in tools table
+            const tool = config.tools.find(t => t.id === priceRow.tool_id);
+            if (tool && tool.options) {
+                const currentOptions = Array.isArray(tool.options) ? tool.options : [];
+                // Filter out the deleted subtype
+                const updatedOptions = currentOptions.filter((opt: any) => opt.value !== priceRow.sub_key);
+                
+                const { error: toolErr } = await supabase
+                    .from('tools')
+                    .update({
+                        options: updatedOptions.length > 0 ? updatedOptions : null,
+                        // If no options left, change type to checkbox
+                        type: updatedOptions.length > 0 ? tool.type : 'checkbox',
+                        default_value: tool.default_value === priceRow.sub_key 
+                            ? (updatedOptions[0]?.value || null) 
+                            : tool.default_value
+                    })
+                    .eq('id', priceRow.tool_id);
+                if (toolErr) throw toolErr;
+            }
+
+            showToast(`Subtype "${priceRow.sub_key}" deleted successfully`, 'success');
+            await onRefresh();
+        } catch (err: any) {
+            showToast(err.message || 'Error deleting subtype', 'error');
+        } finally {
+            setLoading(null);
+        }
+    };
+
+    const handleAddSubtypeSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!activeAddSubtypeTool) return;
+        
+        const subKey = newSubtypeKey.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+        const dispName = newSubtypeDisplayName.trim();
+        
+        if (!subKey || !dispName) {
+            showToast('Please fill out all required subtype fields.', 'error');
+            return;
+        }
+
+        // Check if subtype already exists in prices table
+        const exists = config.prices.some(p => p.tool_id === activeAddSubtypeTool.id && p.sub_key === subKey);
+        if (exists) {
+            showToast(`Subtype key "${subKey}" already exists for this tool`, 'error');
+            return;
+        }
+
+        setLoading('Adding subtype...');
+        try {
+            // 1. Update options array in tools table
+            const currentOptions = Array.isArray(activeAddSubtypeTool.options) ? activeAddSubtypeTool.options : [];
+            const updatedOptions = [
+                ...currentOptions,
+                { label: dispName, value: subKey }
+            ];
+
+            const { error: toolErr } = await supabase
+                .from('tools')
+                .update({
+                    options: updatedOptions,
+                    type: 'radio' // Ensure type is radio if it has subtypes
+                })
+                .eq('id', activeAddSubtypeTool.id);
+            if (toolErr) throw toolErr;
+
+            // 2. Insert into tool_prices table
+            let priceErr: any = null;
+            try {
+                const { error } = await supabase
+                    .from('tool_prices')
+                    .insert({
+                        tool_id: activeAddSubtypeTool.id,
+                        sub_key: subKey,
+                        csmbs_price: Number(newSubtypeCsmbs),
+                        sss_price: Number(newSubtypeSss),
+                        ucs_price: Number(newSubtypeUcs),
+                        display_name: dispName
+                    });
+                priceErr = error;
+            } catch (err: any) {
+                priceErr = err;
+            }
+
+            if (priceErr && (priceErr.message?.includes('column "display_name"') || priceErr.code === '42703')) {
+                const { error: retryErr } = await supabase
+                    .from('tool_prices')
+                    .insert({
+                        tool_id: activeAddSubtypeTool.id,
+                        sub_key: subKey,
+                        csmbs_price: Number(newSubtypeCsmbs),
+                        sss_price: Number(newSubtypeSss),
+                        ucs_price: Number(newSubtypeUcs)
+                    });
+                if (retryErr) throw retryErr;
+            } else if (priceErr) {
+                throw priceErr;
+            }
+
+            showToast(`Subtype "${dispName}" added successfully`, 'success');
+            
+            // Clear state
+            setActiveAddSubtypeTool(null);
+            setNewSubtypeKey('');
+            setNewSubtypeDisplayName('');
+            setNewSubtypeCsmbs(0);
+            setNewSubtypeSss(0);
+            setNewSubtypeUcs(0);
+            
+            await onRefresh();
+        } catch (err: any) {
+            showToast(err.message || 'Error adding subtype', 'error');
         } finally {
             setLoading(null);
         }
@@ -696,18 +992,44 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
     // New Operation Form state
     const [newOpName, setNewOpName] = useState('');
     const [newOpCategory, setNewOpCategory] = useState('Lens Surgery');
-    const [newOpKeywords, setNewOpKeywords] = useState('');
+    const [newOpKeywords, setNewOpKeywords] = useState<string[]>([]);
+    const [newOpKeywordInput, setNewOpKeywordInput] = useState('');
+    const [isAddingNewOpKeyword, setIsAddingNewOpKeyword] = useState(false);
+
+    const handleCloseAddOpForm = () => {
+        if (newOpName.trim() || newOpKeywords.length > 0 || newOpKeywordInput.trim()) {
+            const confirmClose = window.confirm('You have unsaved changes in the Add Surgery Operation form. Are you sure you want to discard them?');
+            if (!confirmClose) return;
+        }
+        setShowAddOpForm(false);
+        setNewOpName('');
+        setNewOpKeywords([]);
+        setNewOpKeywordInput('');
+        setIsAddingNewOpKeyword(false);
+        setNewOpCategory('Lens Surgery');
+    };
 
     // Editing Operation Form state (inside expanded accordion)
     const [editOpId, setEditOpId] = useState<string | null>(null);
     const [editOpName, setEditOpName] = useState('');
     const [editOpCategory, setEditOpCategory] = useState('');
-    const [editOpKeywords, setEditOpKeywords] = useState('');
+    const [editOpKeywords, setEditOpKeywords] = useState<string[]>([]);
+    const [editOpKeywordInput, setEditOpKeywordInput] = useState('');
+    const [isAddingEditOpKeyword, setIsAddingEditOpKeyword] = useState(false);
 
     // New Rule state (per operation)
     const [newRuleTargetType, setNewRuleTargetType] = useState<'tool' | 'action'>('tool');
     const [newRuleTargetId, setNewRuleTargetId] = useState('');
     const [newRuleDefaultVal, setNewRuleDefaultVal] = useState('');
+
+    // Separate columns for Tool/Action trigger additions
+    const [newToolRuleId, setNewToolRuleId] = useState('');
+    const [newToolRuleDefaultVal, setNewToolRuleDefaultVal] = useState('');
+    const [isAddingToolRule, setIsAddingToolRule] = useState(false);
+    const [pendingToolRules, setPendingToolRules] = useState<{ target_id: string; default_selected_value: string | null }[]>([]);
+    const [newActionRuleId, setNewActionRuleId] = useState('');
+    const [isAddingActionRule, setIsAddingActionRule] = useState(false);
+    const [pendingActionRules, setPendingActionRules] = useState<string[]>([]);
 
     const categories = ['Lens Surgery', 'Retinal Surgery', 'Glaucoma', 'Cornea', 'Oculoplastics', 'Strabismus', 'Others'];
 
@@ -730,31 +1052,104 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
         return groups;
     }, [filteredOperations]);
 
+    const handleAddKeywordToNewOp = (kw: string): boolean => {
+        const trimmed = kw.trim();
+        if (!trimmed) return false;
+        const lower = trimmed.toLowerCase();
+        
+        // Check local duplicates
+        if (newOpKeywords.some(k => k.toLowerCase() === lower)) {
+            showToast(`Duplicate keyword: "${trimmed}" is already added.`, 'error');
+            return false;
+        }
+        
+        // Check database duplicates
+        const matchedOp = config.operations.find(otherOp =>
+            otherOp.keywords.some(otherKw => otherKw.toLowerCase() === lower)
+        );
+        if (matchedOp) {
+            showToast(`Duplicate keyword: "${trimmed}" is already defined in operation "${matchedOp.name}".`, 'error');
+            return false;
+        }
+        
+        setNewOpKeywords(prev => [...prev, trimmed]);
+        setNewOpKeywordInput('');
+        return true;
+    };
+
+    const handleRemoveKeywordFromNewOp = (indexToRemove: number) => {
+        setNewOpKeywords(prev => prev.filter((_, idx) => idx !== indexToRemove));
+    };
+
+    const handleAddKeywordToEditOp = (kw: string, opId: string): boolean => {
+        const trimmed = kw.trim();
+        if (!trimmed) return false;
+        const lower = trimmed.toLowerCase();
+        
+        // Check local duplicates
+        if (editOpKeywords.some(k => k.toLowerCase() === lower)) {
+            showToast(`Duplicate keyword: "${trimmed}" is already added.`, 'error');
+            return false;
+        }
+        
+        // Check database duplicates
+        const matchedOp = config.operations.find(otherOp =>
+            otherOp.id !== opId && otherOp.keywords.some(otherKw => otherKw.toLowerCase() === lower)
+        );
+        if (matchedOp) {
+            showToast(`Duplicate keyword: "${trimmed}" is already defined in operation "${matchedOp.name}".`, 'error');
+            return false;
+        }
+        
+        setEditOpKeywords(prev => [...prev, trimmed]);
+        setEditOpKeywordInput('');
+        return true;
+    };
+
+    const handleRemoveKeywordFromEditOp = (indexToRemove: number) => {
+        setEditOpKeywords(prev => prev.filter((_, idx) => idx !== indexToRemove));
+    };
+
     const handleCreateOperation = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newOpName.trim()) {
             showToast('Operation name is required', 'error');
             return;
         }
+        
+        let finalKeywords = [...newOpKeywords];
+        if (newOpKeywordInput.trim()) {
+            const trimmedInput = newOpKeywordInput.trim();
+            const lowerInput = trimmedInput.toLowerCase();
+            if (newOpKeywords.some(k => k.toLowerCase() === lowerInput)) {
+                showToast(`Duplicate keyword: "${trimmedInput}" is already added.`, 'error');
+                return;
+            }
+            const matchedOp = config.operations.find(otherOp =>
+                otherOp.keywords.some(otherKw => otherKw.toLowerCase() === lowerInput)
+            );
+            if (matchedOp) {
+                showToast(`Duplicate keyword: "${trimmedInput}" is already defined in operation "${matchedOp.name}".`, 'error');
+                return;
+            }
+            finalKeywords.push(trimmedInput);
+        }
+
         setLoading('Creating operation...');
         try {
-            const parsedKeywords = newOpKeywords
-                .split(',')
-                .map(k => k.trim())
-                .filter(Boolean);
-
             const { error } = await supabase
                 .from('operations')
                 .insert([{
                     name: newOpName.trim(),
                     category: newOpCategory,
-                    keywords: parsedKeywords
+                    keywords: finalKeywords
                 }]);
 
             if (error) throw error;
             showToast('Operation created successfully', 'success');
             setNewOpName('');
-            setNewOpKeywords('');
+            setNewOpKeywords([]);
+            setNewOpKeywordInput('');
             setShowAddOpForm(false);
             await onRefresh();
         } catch (err: any) {
@@ -768,7 +1163,8 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
         setEditOpId(op.id);
         setEditOpName(op.name);
         setEditOpCategory(op.category);
-        setEditOpKeywords(op.keywords.join(', '));
+        setEditOpKeywords([...op.keywords]);
+        setEditOpKeywordInput('');
     };
 
     const handleSaveOperationDetails = async (opId: string) => {
@@ -776,19 +1172,33 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
             showToast('Operation name is required', 'error');
             return;
         }
+        
+        let finalKeywords = [...editOpKeywords];
+        if (editOpKeywordInput.trim()) {
+            const trimmedInput = editOpKeywordInput.trim();
+            const lowerInput = trimmedInput.toLowerCase();
+            if (editOpKeywords.some(k => k.toLowerCase() === lowerInput)) {
+                showToast(`Duplicate keyword: "${trimmedInput}" is already added.`, 'error');
+                return;
+            }
+            const matchedOp = config.operations.find(otherOp =>
+                otherOp.id !== opId && otherOp.keywords.some(otherKw => otherKw.toLowerCase() === lowerInput)
+            );
+            if (matchedOp) {
+                showToast(`Duplicate keyword: "${trimmedInput}" is already defined in operation "${matchedOp.name}".`, 'error');
+                return;
+            }
+            finalKeywords.push(trimmedInput);
+        }
+
         setLoading('Saving operation details...');
         try {
-            const parsedKeywords = editOpKeywords
-                .split(',')
-                .map(k => k.trim())
-                .filter(Boolean);
-
             const { error } = await supabase
                 .from('operations')
                 .update({
                     name: editOpName.trim(),
                     category: editOpCategory,
-                    keywords: parsedKeywords
+                    keywords: finalKeywords
                 })
                 .eq('id', opId);
 
@@ -836,29 +1246,94 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
     };
 
     // --- Rules Logic ---
-    const handleAddRule = async (opId: string) => {
-        if (!newRuleTargetId) {
-            showToast('Please select a target tool or action', 'error');
+    const handleSaveQueuedToolRules = async (opId: string, opRules: DBRule[]) => {
+        const validPending = pendingToolRules.filter(r => r.target_id);
+        if (validPending.length === 0) {
+            setIsAddingToolRule(false);
             return;
         }
-        setLoading('Adding rule...');
+
+        // Validate duplicates within the database rules
+        for (const item of validPending) {
+            if (opRules.some(r => r.target_type === 'tool' && r.target_id === item.target_id)) {
+                const tool = config.tools.find(t => t.id === item.target_id);
+                showToast(`Surgical tool "${tool ? tool.item : item.target_id}" is already triggered in this operation.`, 'error');
+                return;
+            }
+        }
+
+        // Validate duplicates within the pending array itself
+        const ids = validPending.map(r => r.target_id);
+        const hasDuplicates = ids.some((val, i) => ids.indexOf(val) !== i);
+        if (hasDuplicates) {
+            showToast('Please remove duplicate tool selections before saving.', 'error');
+            return;
+        }
+
+        setLoading('Saving tool triggers...');
         try {
             const { error } = await supabase
                 .from('operation_rules')
-                .insert([{
+                .insert(validPending.map(item => ({
                     operation_id: opId,
-                    target_type: newRuleTargetType,
-                    target_id: newRuleTargetId,
-                    default_selected_value: newRuleDefaultVal.trim() || null
-                }]);
+                    target_type: 'tool',
+                    target_id: item.target_id,
+                    default_selected_value: item.default_selected_value ? item.default_selected_value.trim() || null : null
+                })));
 
             if (error) throw error;
-            showToast('Trigger rule added successfully', 'success');
-            setNewRuleTargetId('');
-            setNewRuleDefaultVal('');
+            showToast('Tool triggers saved successfully', 'success');
+            setPendingToolRules([]);
+            setIsAddingToolRule(false);
             await onRefresh();
         } catch (err: any) {
-            showToast(err.message || 'Error adding rule', 'error');
+            showToast(err.message || 'Error saving rules', 'error');
+        } finally {
+            setLoading(null);
+        }
+    };
+
+    const handleSaveQueuedActionRules = async (opId: string, opRules: DBRule[]) => {
+        const validPending = pendingActionRules.filter(id => id);
+        if (validPending.length === 0) {
+            setIsAddingActionRule(false);
+            return;
+        }
+
+        // Validate duplicates within the database rules
+        for (const actionId of validPending) {
+            if (opRules.some(r => r.target_type === 'action' && r.target_id === actionId)) {
+                const action = config.actions.find(a => a.id === actionId);
+                showToast(`Pre-Op action "${action ? action.item : actionId}" is already triggered in this operation.`, 'error');
+                return;
+            }
+        }
+
+        // Validate duplicates within the pending array itself
+        const hasDuplicates = validPending.some((val, i) => validPending.indexOf(val) !== i);
+        if (hasDuplicates) {
+            showToast('Please remove duplicate action selections before saving.', 'error');
+            return;
+        }
+
+        setLoading('Saving action triggers...');
+        try {
+            const { error } = await supabase
+                .from('operation_rules')
+                .insert(validPending.map(actionId => ({
+                    operation_id: opId,
+                    target_type: 'action',
+                    target_id: actionId,
+                    default_selected_value: null
+                })));
+
+            if (error) throw error;
+            showToast('Action triggers saved successfully', 'success');
+            setPendingActionRules([]);
+            setIsAddingActionRule(false);
+            await onRefresh();
+        } catch (err: any) {
+            showToast(err.message || 'Error saving rules', 'error');
         } finally {
             setLoading(null);
         }
@@ -883,35 +1358,91 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
         }
     };
 
-    // Get active items list for rule target selector
-    const ruleTargetOptions = useMemo(() => {
-        if (newRuleTargetType === 'tool') {
-            return config.tools.map(t => ({ id: t.id, name: t.item, options: t.options }));
-        } else {
-            return config.actions.map(a => ({ id: a.id, name: a.item, options: null }));
+    const handleOpClick = (targetOpId: string) => {
+        const isExpanded = expandedOpId === targetOpId;
+        const hasUnsavedChanges = 
+            (isAddingToolRule && pendingToolRules.some(r => r.target_id)) ||
+            (isAddingActionRule && pendingActionRules.some(id => id));
+
+        if (hasUnsavedChanges) {
+            const msg = isExpanded 
+                ? 'You have unsaved tool/action triggers. Do you want to discard them and collapse?' 
+                : 'You have unsaved tool/action triggers. Do you want to discard them and switch operations?';
+            if (!window.confirm(msg)) {
+                return;
+            }
         }
-    }, [config.tools, config.actions, newRuleTargetType]);
-
-    // Get specific suboptions for selected tool (if any)
-    const selectedToolOptions = useMemo(() => {
-        if (newRuleTargetType !== 'tool' || !newRuleTargetId) return null;
-        const tool = config.tools.find(t => t.id === newRuleTargetId);
-        return tool?.options || null;
-    }, [config.tools, newRuleTargetType, newRuleTargetId]);
-
-    // Handle change of rule target type
-    const handleRuleTargetTypeChange = (type: 'tool' | 'action') => {
-        setNewRuleTargetType(type);
-        setNewRuleTargetId('');
-        setNewRuleDefaultVal('');
+        
+        // Reset states
+        setIsAddingToolRule(false);
+        setPendingToolRules([]);
+        setIsAddingActionRule(false);
+        setPendingActionRules([]);
+        
+        setExpandedOpId(isExpanded ? null : targetOpId);
     };
+
+    const toolRuleOptions = useMemo(() => {
+        if (!config?.tools) return [];
+        const sortedTools = [...config.tools].sort((a, b) => {
+            const catA = a.category || 'Generals';
+            const catB = b.category || 'Generals';
+            const idxA = CATEGORY_ORDER.indexOf(catA);
+            const idxB = CATEGORY_ORDER.indexOf(catB);
+            const finalIdxA = idxA === -1 ? 999 : idxA;
+            const finalIdxB = idxB === -1 ? 999 : idxB;
+            if (finalIdxA !== finalIdxB) {
+                return finalIdxA - finalIdxB;
+            }
+            const orderA = typeof a.sort_order === 'number' ? a.sort_order : 999;
+            const orderB = typeof b.sort_order === 'number' ? b.sort_order : 999;
+            if (orderA !== orderB) {
+                return orderA - orderB;
+            }
+            return a.item.localeCompare(b.item);
+        });
+        return sortedTools.map(t => ({ 
+            id: t.id, 
+            name: t.item, 
+            options: t.options,
+            category: t.category || 'Generals'
+        }));
+    }, [config?.tools]);
+
+    const selectedToolRuleOptions = useMemo(() => {
+        if (!config?.tools || !newToolRuleId) return null;
+        const tool = config.tools.find(t => t.id === newToolRuleId);
+        return tool?.options || null;
+    }, [config?.tools, newToolRuleId]);
+
+    const actionRuleOptions = useMemo(() => {
+        if (!config?.actions) return [];
+        return config.actions.map(a => ({ id: a.id, name: a.item }));
+    }, [config?.actions]);
 
     return (
         <div className="space-y-6 animate-fadeIn pb-12">
+            {isOffline && (
+                <div className="flex items-center gap-3 p-4 bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-200/50 dark:border-amber-900/30 rounded-2xl shadow-sm text-xs font-semibold leading-relaxed">
+                    <AlertTriangle size={18} className="text-amber-500 shrink-0" />
+                    <div>
+                        <span className="font-bold text-amber-800 dark:text-amber-300">Offline Fallback Mode:</span> You are currently viewing local configuration data. Saving new tools, deleting items, or editing prices and rules is disabled.
+                    </div>
+                </div>
+            )}
+
             {/* Admin Tabs */}
             <div className="flex bg-gray-100 dark:bg-slate-800/60 p-1 rounded-xl max-w-md">
                 <button
-                    onClick={() => setAdminTab('prices')}
+                    onClick={() => {
+                        if (hasUnsavedChanges()) {
+                            alert('You have unsaved changes. Please save or cancel your edits first.');
+                            return;
+                        }
+                        setEditingCategory(null);
+                        setEditingPriceId(null);
+                        setAdminTab('prices');
+                    }}
                     className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
                         adminTab === 'prices'
                             ? 'bg-white dark:bg-[#151f32] text-gray-900 dark:text-white shadow-sm'
@@ -921,7 +1452,15 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                     Manage Tool Prices
                 </button>
                 <button
-                    onClick={() => setAdminTab('logic')}
+                    onClick={() => {
+                        if (hasUnsavedChanges()) {
+                            alert('You have unsaved changes. Please save or cancel your edits first.');
+                            return;
+                        }
+                        setEditingCategory(null);
+                        setEditingPriceId(null);
+                        setAdminTab('logic');
+                    }}
                     className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
                         adminTab === 'logic'
                             ? 'bg-white dark:bg-[#151f32] text-gray-900 dark:text-white shadow-sm'
@@ -953,7 +1492,15 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                 return (
                                     <button
                                         key={cat}
-                                        onClick={() => setSelectedCategory(cat)}
+                                        onClick={() => {
+                                            if (hasUnsavedChanges()) {
+                                                alert('You have unsaved changes. Please save or cancel your edits first.');
+                                                return;
+                                            }
+                                            setEditingCategory(null);
+                                            setEditingPriceId(null);
+                                            setSelectedCategory(cat);
+                                        }}
                                         className={`px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-all border ${
                                             isSelected
                                                 ? 'bg-[#fcb7f0] border-[#fcb7f0] text-slate-800 font-extrabold shadow-sm scale-105'
@@ -978,9 +1525,28 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                 />
                                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
                             </div>
-                            <button
-                                onClick={() => setShowAddToolForm(!showAddToolForm)}
-                                className="px-3 py-1.5 bg-[#fcb7f0]/20 hover:bg-[#fcb7f0]/40 text-[#8e5a7d] dark:text-[#fcb7f0] text-xs font-bold rounded-lg transition-all border border-[#fcb7f0]/30 flex items-center gap-1.5 shrink-0"
+                             <button
+                                onClick={() => {
+                                    if (hasUnsavedChanges()) {
+                                        alert('You have unsaved changes. Please save or cancel your edits first.');
+                                        return;
+                                    }
+                                    setEditingCategory(null);
+                                    setEditingPriceId(null);
+                                    if (!isOffline) {
+                                        if (showAddToolForm) {
+                                            handleCloseAddToolForm();
+                                        } else {
+                                            setShowAddToolForm(true);
+                                        }
+                                    }
+                                }}
+                                disabled={isOffline}
+                                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all border flex items-center gap-1.5 shrink-0 ${
+                                    isOffline 
+                                        ? 'bg-gray-100 dark:bg-slate-800 text-gray-400 dark:text-slate-600 border-gray-200 dark:border-slate-700 cursor-not-allowed opacity-50'
+                                        : 'bg-[#fcb7f0]/20 hover:bg-[#fcb7f0]/40 text-[#8e5a7d] dark:text-[#fcb7f0] border-[#fcb7f0]/30'
+                                }`}
                             >
                                 <Plus size={14} />
                                 {showAddToolForm ? 'Hide' : 'Add'}
@@ -1021,36 +1587,42 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                             required
                                         />
                                     </div>
-                                    <div>
-                                        <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Category</label>
-                                        <select
-                                            value={newToolCategory}
-                                            onChange={e => setNewToolCategory(e.target.value)}
-                                            className="w-full bg-gray-50 dark:bg-slate-850 border border-gray-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
-                                        >
-                                            {CATEGORY_ORDER.map(cat => (
-                                                <option key={cat} value={cat}>{cat}</option>
-                                            ))}
-                                        </select>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Category</label>
+                                            <div className="relative">
+                                                <select
+                                                    value={newToolCategory}
+                                                    onChange={e => setNewToolCategory(e.target.value)}
+                                                    className="w-full appearance-none bg-white dark:bg-[#151f32] border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-gray-800 dark:text-slate-200 outline-none focus:ring-0 focus:border-gray-200 dark:focus:border-slate-700 transition-all"
+                                                >
+                                                    {CATEGORY_ORDER.map(cat => (
+                                                        <option key={cat} value={cat}>{cat}</option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Option</label>
+                                            <div className="relative">
+                                                <select
+                                                    value={newToolType}
+                                                    onChange={e => setNewToolType(e.target.value as any)}
+                                                    className="w-full appearance-none bg-white dark:bg-[#151f32] border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-gray-800 dark:text-slate-200 outline-none focus:ring-0 focus:border-gray-200 dark:focus:border-slate-700 transition-all"
+                                                >
+                                                    <option value="checkbox">None</option>
+                                                    <option value="radio">Subtype (Multiple choices)</option>
+                                                    <option value="number-input">Input Value</option>
+                                                </select>
+                                                <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
+                                            </div>
+                                            <span className="text-[9px] text-gray-400 dark:text-slate-555 block mt-1 leading-normal">
+                                                {newToolType === 'checkbox' && "• Renders as a simple toggle checkbox (e.g., Fibrin Glue)."}
+                                                {newToolType === 'radio' && "• Renders as multiple choice options (e.g., Constellation vs Stellaris)."}
+                                                {newToolType === 'number-input' && "• Renders with a counter input box (e.g., specifying 4 retractors)."}
+                                            </span>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Option</label>
-                                        <select
-                                            value={newToolType}
-                                            onChange={e => setNewToolType(e.target.value as any)}
-                                            className="w-full bg-gray-50 dark:bg-slate-850 border border-gray-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
-                                        >
-                                            <option value="checkbox">None</option>
-                                            <option value="radio">Subtype (Multiple choices)</option>
-                                            <option value="number-input">Input Value</option>
-                                        </select>
-                                        <span className="text-[9px] text-gray-400 dark:text-slate-555 block mt-1 leading-normal">
-                                            {newToolType === 'checkbox' && "• Renders as a simple toggle checkbox (e.g., Fibrin Glue)."}
-                                            {newToolType === 'radio' && "• Renders as multiple choice options (e.g., Constellation vs Stellaris)."}
-                                            {newToolType === 'number-input' && "• Renders with a counter input box (e.g., specifying 4 retractors)."}
-                                        </span>
-                                    </div>
-                                </div>
                                 {newToolType === 'radio' ? (
                                     <div className="space-y-4 pt-2 border-t border-gray-100 dark:border-slate-800">
                                         <div className="flex justify-between items-center">
@@ -1179,13 +1751,13 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                     </div>
                                 )}
                                 <div className="flex justify-end gap-2 pt-2 border-t border-gray-50 dark:border-slate-800">
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowAddToolForm(false)}
-                                        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-350 text-xs font-bold rounded-lg transition-all"
-                                    >
-                                        Cancel
-                                    </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleCloseAddToolForm}
+                                            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-350 text-xs font-bold rounded-lg transition-all"
+                                        >
+                                            Cancel
+                                        </button>
                                     <button
                                         type="submit"
                                         className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-all flex items-center gap-1"
@@ -1209,7 +1781,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                 <section
                                     key={category}
                                     onDragOver={(e) => {
-                                        if (draggedToolId && draggedCategory !== category && editingCategory === draggedCategory) {
+                                        if (draggedToolId && draggedCategory !== category && !editingPriceId && !editingCategory && !isOffline) {
                                             e.preventDefault();
                                             if (dragOverCategory !== category) {
                                                 setDragOverCategory(category);
@@ -1222,7 +1794,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                         }
                                     }}
                                     onDrop={async (e) => {
-                                        if (draggedToolId && draggedCategory !== category && editingCategory === draggedCategory) {
+                                        if (draggedToolId && draggedCategory !== category && !editingPriceId && !editingCategory && !isOffline) {
                                             e.preventDefault();
                                             await handleMoveToolToPosition(draggedToolId, 'end', draggedCategory!, category);
                                         }
@@ -1256,7 +1828,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                 <section
                                     key={category}
                                     onDragOver={(e) => {
-                                        if (draggedToolId && draggedCategory !== category && editingCategory === draggedCategory) {
+                                        if (draggedToolId && draggedCategory !== category && !editingPriceId && !editingCategory && !isOffline) {
                                             e.preventDefault();
                                             if (dragOverCategory !== category) {
                                                 setDragOverCategory(category);
@@ -1269,7 +1841,7 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                         }
                                     }}
                                     onDrop={async (e) => {
-                                        if (draggedToolId && draggedCategory !== category && editingCategory === draggedCategory) {
+                                        if (draggedToolId && draggedCategory !== category && !editingPriceId && !editingCategory && !isOffline) {
                                             e.preventDefault();
                                             await handleMoveToolToPosition(draggedToolId, 'end', draggedCategory!, category);
                                         }
@@ -1303,7 +1875,13 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                         <Save size={12} />
                                                     </button>
                                                     <button
-                                                        onClick={() => setEditingCategory(null)}
+                                                        onClick={() => {
+                                                            if (hasCategoryChanges(category)) {
+                                                                const confirmCancel = window.confirm('Are you sure you want to discard your unsaved changes?');
+                                                                if (!confirmCancel) return;
+                                                            }
+                                                            setEditingCategory(null);
+                                                        }}
                                                         disabled={loading !== null}
                                                         className="p-1.5 bg-gray-400 hover:bg-gray-500 text-white rounded transition-all flex items-center justify-center shadow-sm disabled:opacity-50"
                                                         title="Cancel"
@@ -1313,8 +1891,14 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                 </>
                                             ) : (
                                                 <button
-                                                    onClick={() => handleStartEditCategory(category)}
-                                                    disabled={editingCategory !== null || loading !== null}
+                                                    onClick={() => {
+                                                        if (hasUnsavedChanges()) {
+                                                            alert('You have unsaved changes. Please save or cancel your edits first.');
+                                                            return;
+                                                        }
+                                                        handleStartEditCategory(category);
+                                                    }}
+                                                    disabled={loading !== null || isOffline || editingPriceId !== null}
                                                     className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-500 dark:text-slate-400 rounded text-[10px] font-bold transition-all disabled:opacity-50"
                                                 >
                                                     Edit
@@ -1339,7 +1923,21 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                 {items.map((price, idx) => {
                                                     const tool = config.tools.find(t => t.id === price.tool_id);
                                                     const isEditing = editingCategory === category;
-                                                    const isFirstOccurrence = items.findIndex(item => item.tool_id === price.tool_id) === idx;
+                                                     const isFirstOccurrence = items.findIndex(item => item.tool_id === price.tool_id) === idx;
+                                                     const isLastOccurrence = (() => {
+                                                         let lastIdx = -1;
+                                                         for (let i = items.length - 1; i >= 0; i--) {
+                                                             if (items[i].tool_id === price.tool_id) {
+                                                                 lastIdx = i;
+                                                                 break;
+                                                             }
+                                                         }
+                                                         return lastIdx === idx;
+                                                     })();
+                                                     const isNewReuseTool = tool?.options?.some((o: any) => o.value === NEW_REUSED_OPTIONS.NEW || o.value === NEW_REUSED_OPTIONS.REUSED);
+                                                     const toolPricesCount = items.filter(item => item.tool_id === price.tool_id).length;
+                                                     const hasSubtypes = (toolPricesCount > 1 || (tool && (tool.type === 'radio' || (tool.options && tool.options.length > 0)))) && !isNewReuseTool;
+                                                     const showGroupHeader = hasSubtypes && isFirstOccurrence && (editingCategory === category);
                                                     const rowData = editPricesData[price.id] || {
                                                         displayName: price.display_name || getToolDisplayName(price.tool_id, tool ? tool.item : price.tool_id, price.sub_key),
                                                         csmbs: price.csmbs_price,
@@ -1348,9 +1946,67 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                     };
 
                                                     return (
-                                                        <tr
-                                                            key={price.id}
-                                                            draggable={isEditing}
+                                                        <>
+                                                            {showGroupHeader && (
+                                                                <tr key={`group-header-${price.tool_id}`} className="bg-[#8e5a7d]/5 dark:bg-slate-800/60 border-y border-[#8e5a7d]/15 dark:border-slate-700/80 font-bold text-xs text-gray-800 dark:text-slate-350">
+                                                                    <td className="py-3 px-3" colSpan={2}>
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="w-1 h-4 bg-[#8e5a7d] dark:bg-[#fcb7f0] rounded shrink-0"></span>
+                                                                            <Folder size={13} className="text-[#8e5a7d] dark:text-[#fcb7f0] shrink-0" />
+                                                                            <span className="font-extrabold text-[#8e5a7d] dark:text-white uppercase tracking-wider text-[10px]">
+                                                                                {tool ? tool.item : price.tool_id}
+                                                                            </span>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="py-3 px-2 text-right font-mono"></td>
+                                                                    <td className="py-3 px-2 text-right font-mono"></td>
+                                                                    <td className="py-3 px-2 text-right font-mono"></td>
+                                                                    <td className="py-3 px-2 text-center">
+                                                                        <div className="flex items-center justify-center gap-2">
+                                                                            <div 
+                                                                                className={`relative p-1 text-[#8e5a7d] hover:text-[#734464] hover:bg-[#fcb7f0]/10 dark:text-[#fcb7f0] dark:hover:text-[#f78de3] dark:hover:bg-[#fcb7f0]/5 rounded transition-all flex items-center justify-center ${
+                                                                                    (loading !== null)
+                                                                                        ? 'opacity-50 cursor-not-allowed'
+                                                                                        : 'cursor-pointer'
+                                                                                }`}
+                                                                                title="Move Category"
+                                                                            >
+                                                                                <FolderSymlink size={13} />
+                                                                                <select
+                                                                                    value="move"
+                                                                                    disabled={loading !== null || isOffline}
+                                                                                    onChange={async (e) => {
+                                                                                        const newCat = e.target.value;
+                                                                                        if (newCat !== "move") {
+                                                                                            await handleMoveToolToPosition(price.tool_id, 'end', category, newCat);
+                                                                                        }
+                                                                                    }}
+                                                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                                                                                >
+                                                                                    <option value="move" disabled hidden>Move</option>
+                                                                                    {CATEGORY_ORDER.map(cat => (
+                                                                                        <option key={cat} value={cat} disabled={cat === category}>
+                                                                                            {cat}
+                                                                                        </option>
+                                                                                    ))}
+                                                                                </select>
+                                                                            </div>
+                                                                             <button
+                                                                                 type="button"
+                                                                                 onClick={() => handleDeleteTool(price.tool_id)}
+                                                                                 disabled={loading !== null || isOffline}
+                                                                                 className="p-1.5 text-[#991b1b] hover:text-[#7f1d1d] bg-red-100/70 hover:bg-red-200/90 border border-red-300 dark:text-red-300 dark:hover:text-red-100 dark:bg-red-950/50 dark:hover:bg-red-900/70 dark:border-red-800 rounded transition-all shrink-0"
+                                                                                 title={`Delete Entire "${tool ? tool.item : price.tool_id}" Tool`}
+                                                                             >
+                                                                                 <Trash2 size={13} />
+                                                                             </button>
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            )}
+                                                            <tr
+                                                                key={price.id}
+                                                            draggable={isEditing && !isOffline}
                                                             onDragStart={(e) => {
                                                                 setDraggedToolId(price.tool_id);
                                                                 setDraggedCategory(category);
@@ -1480,49 +2136,63 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                             <td className="py-3 px-2 text-center">
                                                                 {isEditing ? (
                                                                     <div className="flex items-center justify-center gap-1.5">
-                                                                        <div 
-                                                                            className={`relative p-1 text-[#8e5a7d] hover:text-[#734464] hover:bg-[#fcb7f0]/10 dark:text-[#fcb7f0] dark:hover:text-[#f78de3] dark:hover:bg-[#fcb7f0]/5 rounded transition-all flex items-center justify-center ${
-                                                                                (loading !== null)
-                                                                                    ? 'opacity-50 cursor-not-allowed'
-                                                                                    : 'cursor-pointer'
-                                                                            }`}
-                                                                            title="Move Category"
-                                                                        >
-                                                                            <FolderSymlink size={13} />
-                                                                            <select
-                                                                                value="move"
-                                                                                disabled={loading !== null}
-                                                                                onChange={async (e) => {
-                                                                                    const newCat = e.target.value;
-                                                                                    if (newCat !== "move") {
-                                                                                        await handleMoveToolToPosition(price.tool_id, 'end', category, newCat);
-                                                                                    }
-                                                                                }}
-                                                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
-                                                                            >
-                                                                                <option value="move" disabled hidden>Move</option>
-                                                                                {CATEGORY_ORDER.map(cat => (
-                                                                                    <option key={cat} value={cat} disabled={cat === category}>
-                                                                                        {cat}
-                                                                                    </option>
-                                                                                ))}
-                                                                            </select>
-                                                                        </div>
-                                                                        <button
-                                                                            onClick={() => handleDeleteTool(price.tool_id)}
-                                                                            disabled={loading !== null}
-                                                                            className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
-                                                                            title="Delete Tool"
-                                                                        >
-                                                                            <Trash2 size={13} />
-                                                                        </button>
+                                                                             {tool && (tool.type === 'radio' || (tool.options && tool.options.length > 0)) && isFirstOccurrence && (
+                                                                                 <button
+                                                                                     type="button"
+                                                                                     onClick={() => setActiveAddSubtypeTool(tool)}
+                                                                                     disabled={loading !== null || isOffline}
+                                                                                     className="p-1 text-gray-500 hover:text-[#fcb7f0] dark:text-slate-405 dark:hover:text-[#fcb7f0] disabled:opacity-30 disabled:cursor-not-allowed rounded transition-all"
+                                                                                     title="Add Subtype Option"
+                                                                                 >
+                                                                                     <Plus size={13} strokeWidth={2.5} />
+                                                                                 </button>
+                                                                             )}
+                                                                            {price.sub_key ? (
+                                                                                 <button
+                                                                                     type="button"
+                                                                                     onClick={() => handleDeleteSubtype(price)}
+                                                                                     disabled={loading !== null || isOffline}
+                                                                                     className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
+                                                                                     title={`Delete Subtype "${price.sub_key}"`}
+                                                                                 >
+                                                                                     <Trash2 size={13} />
+                                                                                 </button>
+                                                                             ) : (
+                                                                                 <button
+                                                                                     type="button"
+                                                                                     onClick={() => handleDeleteTool(price.tool_id)}
+                                                                                     disabled={loading !== null || isOffline}
+                                                                                     className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
+                                                                                     title="Delete Tool"
+                                                                                 >
+                                                                                     <Trash2 size={13} />
+                                                                                 </button>
+                                                                             )}
                                                                     </div>
-                                                                ) : (
-                                                                    <span className="text-gray-400 dark:text-slate-600">-</span>
-                                                                )}
-                                                            </td>
-                                                        </tr>
-                                                    );
+                                                                 ) : (
+                                                                     <div className="flex items-center justify-center gap-1.5">
+                                                                         <button
+                                                                             onClick={() => {
+                                                                                 if (editingCategory !== null && editingCategory !== category) {
+                                                                                     if (hasCategoryChanges(editingCategory)) {
+                                                                                         alert('You have unsaved changes. Please save or cancel your edits first.');
+                                                                                         return;
+                                                                                     }
+                                                                                 }
+                                                                                 handleStartEditCategory(category);
+                                                                             }}
+                                                                             disabled={isOffline}
+                                                                             className="p-1 text-gray-500 hover:text-[#fcb7f0] dark:text-slate-400 dark:hover:text-[#fcb7f0] rounded transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                             title="Edit tool prices"
+                                                                         >
+                                                                             <Edit size={13} />
+                                                                         </button>
+                                                                     </div>
+                                                                 )}
+                                                             </td>
+                                                         </tr>
+                                                     </>
+                                                 );
                                                 })}
                                             </tbody>
                                         </table>
@@ -1563,7 +2233,14 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                 return (
                                     <button
                                         key={cat}
-                                        onClick={() => setSelectedLogicCategory(cat)}
+                                        onClick={() => {
+                                            if (editingPriceId !== null && hasPriceRowChanges(editingPriceId)) {
+                                                alert('You have unsaved changes. Please save or cancel your edits first.');
+                                                return;
+                                            }
+                                            setEditingPriceId(null);
+                                            setSelectedLogicCategory(cat);
+                                        }}
                                         className={`px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-all border ${
                                             isSelected
                                                 ? 'bg-[#fcb7f0] border-[#fcb7f0] text-slate-800 font-extrabold shadow-sm scale-105'
@@ -1588,76 +2265,156 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                 />
                                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
                             </div>
-                            <button
-                                onClick={() => setShowAddOpForm(!showAddOpForm)}
-                                className="px-3 py-1.5 bg-[#fcb7f0]/20 hover:bg-[#fcb7f0]/40 text-[#8e5a7d] dark:text-[#fcb7f0] text-xs font-bold rounded-lg transition-all border border-[#fcb7f0]/30 flex items-center gap-1.5 shrink-0"
-                            >
-                                <Plus size={14} />
-                                {showAddOpForm ? 'Hide' : 'Add'}
-                            </button>
+                             <button
+                                  onClick={() => {
+                                      if (editingPriceId !== null && hasPriceRowChanges(editingPriceId)) {
+                                          alert('You have unsaved changes. Please save or cancel your edits first.');
+                                          return;
+                                      }
+                                      setEditingPriceId(null);
+                                      if (!isOffline) {
+                                          if (showAddOpForm) {
+                                              handleCloseAddOpForm();
+                                          } else {
+                                              setShowAddOpForm(true);
+                                          }
+                                      }
+                                  }}
+                                 disabled={isOffline}
+                                 className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all border flex items-center gap-1.5 shrink-0 ${
+                                     isOffline 
+                                         ? 'bg-gray-100 dark:bg-slate-800 text-gray-400 dark:text-slate-600 border-gray-200 dark:border-slate-700 cursor-not-allowed opacity-50'
+                                         : 'bg-[#fcb7f0]/20 hover:bg-[#fcb7f0]/40 text-[#8e5a7d] dark:text-[#fcb7f0] border-[#fcb7f0]/30'
+                                 }`}
+                             >
+                                 <Plus size={14} />
+                                 {showAddOpForm ? 'Hide' : 'Add'}
+                             </button>
                         </div>
-                    </div>
-
-                    {/* Add Operation Form */}
+                     </div>
+                               {/* Add Operation Form Modal */}
                     {showAddOpForm && (
-                        <div className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-5 animate-slideDown transition-all duration-300">
-                            <div className="flex justify-between items-center mb-4 border-b border-gray-50 dark:border-slate-800 pb-2">
-                                <h3 className="text-xs font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide flex items-center gap-2">
-                                    <Plus size={16} className="text-[#8e5a7d] dark:text-brand-primary-dark" />
-                                    Add Surgery Operation
-                                </h3>
-                            </div>
-                            <form onSubmit={handleCreateOperation} className="mt-4 p-4 border border-dashed border-gray-200 dark:border-slate-700 rounded-xl space-y-4">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Operation Name</label>
-                                        <input
-                                            type="text"
-                                            value={newOpName}
-                                            onChange={e => setNewOpName(e.target.value)}
-                                            placeholder="e.g. PPV, Phaco, GDI"
-                                            className="w-full bg-gray-50 dark:bg-slate-850 border border-gray-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
-                                            required
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Category</label>
-                                        <select
-                                            value={newOpCategory}
-                                            onChange={e => setNewOpCategory(e.target.value)}
-                                            className="w-full bg-gray-50 dark:bg-slate-850 border border-gray-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
-                                        >
-                                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                                        </select>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Trigger Keywords (comma separated)</label>
-                                    <input
-                                        type="text"
-                                        value={newOpKeywords}
-                                        onChange={e => setNewOpKeywords(e.target.value)}
-                                        placeholder="e.g. phaco, phacoemulsification, phc"
-                                        className="w-full bg-gray-50 dark:bg-slate-850 border border-gray-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
-                                    />
-                                    <span className="text-[9px] text-gray-400 dark:text-slate-500 mt-1 block font-medium">Keywords are case-insensitive. Small keywords (≤2 characters) will match whole words only.</span>
-                                </div>
-                                <div className="flex justify-end gap-2 pt-2 border-t border-gray-50 dark:border-slate-800">
-                                    <button
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn p-4">
+                            <div className="bg-white dark:bg-[#151f32] rounded-2xl shadow-xl border border-gray-150 dark:border-slate-800 p-5 sm:p-6 w-full max-w-xl animate-scaleUp overflow-y-auto max-h-[90vh]">
+                                <div className="flex justify-between items-center mb-4 border-b border-gray-50 dark:border-slate-800 pb-2">
+                                    <h3 className="text-xs font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide flex items-center gap-2">
+                                        <Plus size={16} className="text-[#8e5a7d] dark:text-brand-primary-dark" />
+                                        Add Surgery Operation
+                                    </h3>
+                                    <button 
                                         type="button"
-                                        onClick={() => setShowAddOpForm(false)}
-                                        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-350 text-xs font-bold rounded-lg transition-all"
+                                        onClick={handleCloseAddOpForm}
+                                        className="text-gray-400 hover:text-gray-500 transition-colors p-1"
                                     >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="px-4 py-2 bg-[#fcb7f0] hover:bg-[#fcb7f0]/85 text-slate-800 text-xs font-bold rounded-lg transition-all shadow-sm flex items-center gap-1.5"
-                                    >
-                                        <Plus size={14} /> Create Operation
+                                        <X size={18} />
                                     </button>
                                 </div>
-                            </form>
+                                <form onSubmit={handleCreateOperation} className="mt-4 p-4 border border-dashed border-gray-200 dark:border-slate-700 rounded-xl space-y-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Operation Name</label>
+                                            <input
+                                                type="text"
+                                                value={newOpName}
+                                                onChange={e => setNewOpName(e.target.value)}
+                                                placeholder="e.g. PPV, Phaco, GDI"
+                                                className="w-full bg-gray-50 dark:bg-slate-850 border border-gray-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Category</label>
+                                            <div className="relative">
+                                                <select
+                                                    value={newOpCategory}
+                                                    onChange={e => setNewOpCategory(e.target.value)}
+                                                    className="w-full appearance-none bg-white dark:bg-[#151f32] border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-gray-800 dark:text-slate-200 outline-none focus:ring-0 focus:border-gray-200 dark:focus:border-slate-700 transition-all"
+                                                >
+                                                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                                </select>
+                                                <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Trigger Keywords</label>
+                                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                            {newOpKeywords.map((kw, idx) => (
+                                                <span 
+                                                    key={idx} 
+                                                    className="inline-flex items-center gap-1 bg-[#fcb7f0]/35 dark:bg-[#fcb7f0]/15 text-[#8e5a7d] dark:text-[#fcb7f0] border border-[#fcb7f0]/35 text-[10px] font-bold px-2 py-0.5 rounded-full transition-all"
+                                                >
+                                                    {kw}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveKeywordFromNewOp(idx)}
+                                                        className="hover:bg-[#fcb7f0]/50 dark:hover:bg-[#fcb7f0]/30 rounded-full p-0.5 transition-all text-[#8e5a7d] dark:text-[#fcb7f0]"
+                                                    >
+                                                        <X size={10} strokeWidth={3} />
+                                                    </button>
+                                                </span>
+                                            ))}
+                                            
+                                            {isAddingNewOpKeyword ? (
+                                                <input
+                                                    type="text"
+                                                    autoFocus
+                                                    value={newOpKeywordInput}
+                                                    onChange={e => setNewOpKeywordInput(e.target.value)}
+                                                    onBlur={() => {
+                                                        if (newOpKeywordInput.trim()) {
+                                                            handleAddKeywordToNewOp(newOpKeywordInput);
+                                                        }
+                                                        setIsAddingNewOpKeyword(false);
+                                                    }}
+                                                    onKeyDown={e => {
+                                                        if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            if (newOpKeywordInput.trim()) {
+                                                                handleAddKeywordToNewOp(newOpKeywordInput);
+                                                            }
+                                                            setIsAddingNewOpKeyword(false);
+                                                        } else if (e.key === 'Escape') {
+                                                            setIsAddingNewOpKeyword(false);
+                                                            setNewOpKeywordInput('');
+                                                        }
+                                                    }}
+                                                    placeholder="Keyword..."
+                                                    className="bg-transparent border-b border-[#fcb7f0] px-1 py-0 text-[10px] font-bold outline-none text-[#8e5a7d] dark:text-[#fcb7f0] w-20 transition-all"
+                                                />
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setIsAddingNewOpKeyword(true);
+                                                        setNewOpKeywordInput('');
+                                                    }}
+                                                    className="inline-flex items-center gap-0.5 bg-white hover:bg-[#fcb7f0]/10 dark:bg-slate-900 dark:hover:bg-[#fcb7f0]/5 border border-dashed border-[#fcb7f0]/60 text-[#8e5a7d] dark:text-[#fcb7f0] text-[10px] font-bold px-2 py-0.5 rounded-full transition-all"
+                                                >
+                                                    <Plus size={10} strokeWidth={3} /> Add
+                                                </button>
+                                            )}
+                                        </div>
+                                        <span className="text-[9px] text-gray-400 dark:text-slate-555 mt-1 block font-medium">Keywords are case-insensitive. Small keywords (≤2 characters) will match whole words only.</span>
+                                    </div>
+                                    <div className="flex justify-end gap-2 pt-2 border-t border-gray-50 dark:border-slate-800">
+                                        <button
+                                            type="button"
+                                            onClick={handleCloseAddOpForm}
+                                            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-350 text-xs font-bold rounded-lg transition-all"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-all flex items-center gap-1"
+                                        >
+                                            <Save size={14} />
+                                            Save Operation
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
                         </div>
                     )}
 
@@ -1693,10 +2450,10 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                     className="bg-white dark:bg-[#151f32] rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden transition-colors"
                                                 >
                                                     {/* Operation Header */}
-                                                    <div 
-                                                        onClick={() => setExpandedOpId(isExpanded ? null : op.id)}
-                                                        className="p-3 sm:p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50/50 dark:hover:bg-slate-800/20 transition-colors"
-                                                    >
+                                                     <div 
+                                                         onClick={() => handleOpClick(op.id)}
+                                                         className="p-3 sm:p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50/50 dark:hover:bg-slate-800/20 transition-colors"
+                                                     >
                                                         <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                                                             <span className="text-xs sm:text-sm font-bold text-gray-900 dark:text-white">
                                                                 {op.name}
@@ -1719,27 +2476,28 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
 
                                                     {/* Expanded Operation Body */}
                                                     {isExpanded && (
-                                                        <div className="p-4 sm:p-5 border-t border-gray-50 dark:border-slate-800/80 bg-gray-50/30 dark:bg-slate-900/10 space-y-5 animate-slideDown">
+                                                        <div className="p-3 sm:p-4 border-t border-gray-50 dark:border-slate-800/80 bg-gray-50/30 dark:bg-slate-900/10 space-y-4 animate-slideDown">
                                                             {/* edit details form */}
-                                                            <div className="p-4 bg-white dark:bg-[#111827] rounded-xl border border-gray-100 dark:border-slate-800 space-y-4">
-                                                                <div className="flex items-center justify-between">
-                                                                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-slate-500">Operation Settings</h4>
-                                                                    {!isEditingDetails ? (
+                                                            <div className="p-3 bg-white dark:bg-[#111827] rounded-xl border border-gray-100 dark:border-slate-800 space-y-3">
+                                                                 <div className="flex items-center justify-end">
+                                                                     {!isEditingDetails ? (
                                                                         <div className="flex gap-2">
-                                                                            <button
-                                                                                onClick={() => handleStartEditOp(op)}
-                                                                                className="p-1 text-gray-500 hover:text-[#fcb7f0] transition-colors"
-                                                                                title="Edit details"
-                                                                            >
-                                                                                <Edit size={14} />
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={() => handleDeleteOperation(op.id)}
-                                                                                className="p-1 text-gray-500 hover:text-red-500 transition-colors"
-                                                                                title="Delete operation"
-                                                                            >
-                                                                                <Trash2 size={14} />
-                                                                            </button>
+                                                                             <button
+                                                                                 onClick={() => !isOffline && handleStartEditOp(op)}
+                                                                                 disabled={isOffline}
+                                                                                 className="p-1 text-gray-500 hover:text-[#fcb7f0] disabled:opacity-30 disabled:hover:text-gray-500 disabled:cursor-not-allowed transition-colors"
+                                                                                 title="Edit details"
+                                                                             >
+                                                                                 <Edit size={14} />
+                                                                             </button>
+                                                                             <button
+                                                                                 onClick={() => !isOffline && handleDeleteOperation(op.id)}
+                                                                                 disabled={isOffline}
+                                                                                 className="p-1 text-gray-500 hover:text-red-500 disabled:opacity-30 disabled:hover:text-gray-500 disabled:cursor-not-allowed transition-colors"
+                                                                                 title="Delete operation"
+                                                                             >
+                                                                                 <Trash2 size={14} />
+                                                                             </button>
                                                                         </div>
                                                                     ) : (
                                                                         <div className="flex gap-1.5">
@@ -1750,11 +2508,20 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                                             >
                                                                                 <Save size={14} />
                                                                             </button>
-                                                                            <button
-                                                                                onClick={() => setEditOpId(null)}
-                                                                                className="p-1 text-gray-400 hover:text-gray-500 transition-colors"
-                                                                                title="Cancel"
-                                                                            >
+                                                                                <button
+                                                                                    onClick={() => {
+                                                                                        const hasChanges = editOpName.trim() !== op.name || 
+                                                                                                           editOpCategory !== op.category || 
+                                                                                                           editOpKeywords.trim() !== op.keywords.join(', ');
+                                                                                        if (hasChanges) {
+                                                                                            const confirmCancel = window.confirm('Are you sure you want to discard your unsaved changes?');
+                                                                                            if (!confirmCancel) return;
+                                                                                        }
+                                                                                        setEditOpId(null);
+                                                                                    }}
+                                                                                    className="p-1 text-gray-400 hover:text-gray-500 transition-colors"
+                                                                                    title="Cancel"
+                                                                                >
                                                                                 <X size={14} />
                                                                             </button>
                                                                         </div>
@@ -1808,124 +2575,279 @@ export default function AdminPage({ config, onRefresh }: AdminPageProps) {
                                                                 )}
                                                             </div>
 
-                                                            {/* associated rules */}
-                                                            <div className="space-y-3">
-                                                                <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-450 dark:text-slate-400 px-1">Checklist Triggers</h4>
-                                                                
-                                                                {opRules.length === 0 ? (
-                                                                    <div className="py-4 text-center border border-dashed border-gray-150 dark:border-slate-800 rounded-xl text-gray-400 dark:text-slate-500 text-xs italic">
-                                                                        No tools or actions are automatically triggered for this operation yet.
-                                                                    </div>
-                                                                ) : (
-                                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                                                        {opRules.map(rule => {
-                                                                            let targetName = 'Unknown';
-                                                                            if (rule.target_type === 'tool') {
-                                                                                const tool = config.tools.find(t => t.id === rule.target_id);
-                                                                                targetName = tool ? tool.item : rule.target_id;
-                                                                            } else {
-                                                                                const action = config.actions.find(a => a.id === rule.target_id);
-                                                                                targetName = action ? action.item : rule.target_id;
-                                                                            }
+                                                             {/* associated rules */}
+                                                             <div className="pt-1">
+                                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                                     {/* 1. Surgical Tools Column (Left) */}
+                                                                     <div className="flex flex-col h-full bg-gray-50/30 dark:bg-slate-800/10 border border-gray-100 dark:border-slate-800/60 rounded-2xl p-3 sm:p-4">
+                                                                         <div className="flex items-center gap-1.5 mb-3 pb-1 border-b border-gray-100 dark:border-slate-800/80">
+                                                                             <span className="w-1 h-2 bg-sky-400 dark:bg-sky-500 rounded-full"></span>
+                                                                             <span className="text-[9px] font-black uppercase tracking-widest text-sky-700 dark:text-sky-400">Surgical Tools</span>
+                                                                         </div>
+                                                                         
+                                                                         <div className="flex-1 space-y-2 mb-3">
+                                                                             {opRules.filter(r => r.target_type === 'tool').length === 0 ? (
+                                                                                 <div className="py-6 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
+                                                                                     No surgical tools triggered yet.
+                                                                                 </div>
+                                                                             ) : (
+                                                                                 opRules.filter(r => r.target_type === 'tool').map(rule => {
+                                                                                     const tool = config.tools.find(t => t.id === rule.target_id);
+                                                                                     const targetName = tool ? tool.item : rule.target_id;
+                                                                                     return (
+                                                                                         <div 
+                                                                                             key={rule.id} 
+                                                                                             className="bg-white dark:bg-[#111827] border border-gray-100 dark:border-slate-800/60 p-2 rounded-xl flex items-center justify-between gap-3 text-xs"
+                                                                                         >
+                                                                                             <div className="flex flex-col">
+                                                                                                 <span className="font-bold text-gray-800 dark:text-slate-200 text-xs">
+                                                                                                     {targetName}
+                                                                                                 </span>
+                                                                                                 {rule.default_selected_value && (
+                                                                                                     <span className="text-[9px] text-gray-450 dark:text-slate-400 font-semibold mt-0.5">
+                                                                                                         Default: {rule.default_selected_value}
+                                                                                                     </span>
+                                                                                                 )}
+                                                                                             </div>
+                                                                                             <button
+                                                                                                 onClick={() => !isOffline && handleDeleteRule(rule.id)}
+                                                                                                 disabled={isOffline}
+                                                                                                 className="text-gray-400 hover:text-red-500 disabled:opacity-30 disabled:hover:text-gray-400 disabled:cursor-not-allowed p-1 rounded transition-colors"
+                                                                                                 title="Remove trigger"
+                                                                                             >
+                                                                                                 <Trash2 size={12} />
+                                                                                             </button>
+                                                                                         </div>
+                                                                                     );
+                                                                                 })
+                                                                             )}
+                                                                         </div>
+                                                                         
+                                                                         {/* Add tool inline row at the last row of the column */}
+                                                                         {isAddingToolRule ? (
+                                                                             <div className="bg-white dark:bg-[#111827] border border-dashed border-gray-200 dark:border-slate-800/80 p-2.5 rounded-xl space-y-2 mt-auto">
+                                                                                 <div className="flex items-center justify-between">
+                                                                                     <span className="text-[8px] font-black uppercase tracking-wider text-gray-400 dark:text-slate-500 block">Add Surgical Tool Trigger</span>
+                                                                                     <button 
+                                                                                         onClick={() => setIsAddingToolRule(false)} 
+                                                                                         className="text-gray-400 hover:text-gray-600 dark:text-slate-550 dark:hover:text-slate-400 transition-colors p-0.5"
+                                                                                     >
+                                                                                         <X size={12} strokeWidth={2.5} />
+                                                                                     </button>
+                                                                                 </div>
+                                                                                 <div className="flex flex-col sm:flex-row gap-2">
+                                                                                     <div className="relative flex-1">
+                                                                                         <select
+                                                                                             value={newToolRuleId}
+                                                                                             onChange={e => {
+                                                                                                 setNewToolRuleId(e.target.value);
+                                                                                                 setNewToolRuleDefaultVal('');
+                                                                                             }}
+                                                                                             className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg pl-2.5 pr-8 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200 appearance-none"
+                                                                                         >
+                                                                                             <option value="">- Select Tool -</option>
+                                                                                             {CATEGORY_ORDER.map(cat => {
+                                                                                                 const catTools = toolRuleOptions.filter(t => t.category === cat);
+                                                                                                 if (catTools.length === 0) return null;
+                                                                                                 return (
+                                                                                                     <optgroup key={cat} label={cat} className="text-gray-500 font-bold bg-white dark:bg-slate-800">
+                                                                                                         {catTools.map(opt => (
+                                                                                                             <option key={opt.id} value={opt.id} className="text-gray-900 dark:text-white font-medium">
+                                                                                                                 {opt.name}
+                                                                                                             </option>
+                                                                                                         ))}
+                                                                                                     </optgroup>
+                                                                                                 );
+                                                                                             })}
+                                                                                         </select>
+                                                                                         <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                                                                     </div>
+                                                                                     
+                                                                                     {selectedToolRuleOptions && (
+                                                                                         <div className="relative min-w-[120px]">
+                                                                                             <select
+                                                                                                 value={newToolRuleDefaultVal}
+                                                                                                 onChange={e => setNewToolRuleDefaultVal(e.target.value)}
+                                                                                                 className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg pl-2.5 pr-8 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200 appearance-none"
+                                                                                             >
+                                                                                                 <option value="">- Selection (Opt) -</option>
+                                                                                                 {selectedToolRuleOptions.map(o => (
+                                                                                                     <option key={o.value} value={o.value}>{o.label}</option>
+                                                                                                 ))}
+                                                                                             </select>
+                                                                                             <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                                                                         </div>
+                                                                                     )}
+                                                                                     
+                                                                                     <button
+                                                                                         onClick={() => {
+                                                                                             if (!newToolRuleId) return;
+                                                                                             setPendingToolRules(prev => [...prev, { target_id: newToolRuleId, default_selected_value: newToolRuleDefaultVal || null }]);
+                                                                                             setNewToolRuleId('');
+                                                                                             setNewToolRuleDefaultVal('');
+                                                                                         }}
+                                                                                         disabled={!newToolRuleId}
+                                                                                         className={`px-3 py-1 rounded-lg text-[10px] font-black transition-all border uppercase tracking-wider flex items-center justify-center gap-1 shrink-0 ${
+                                                                                             !newToolRuleId
+                                                                                                 ? 'bg-gray-150 dark:bg-slate-800 text-gray-400 dark:text-slate-600 border-gray-200 dark:border-slate-700 cursor-not-allowed opacity-50'
+                                                                                                 : 'bg-[#fcb7f0]/20 hover:bg-[#fcb7f0]/40 text-[#8e5a7d] dark:text-[#fcb7f0] border-[#fcb7f0]/30'
+                                                                                         }`}
+                                                                                     >
+                                                                                         <Plus size={10} strokeWidth={3} /> Add
+                                                                                     </button>
+                                                                                 </div>
+                                                                             </div>
+                                                                         ) : (
+                                                                             <button
+                                                                                 type="button"
+                                                                                 disabled={isOffline}
+                                                                                 onClick={() => {
+                                                                                     setIsAddingToolRule(true);
+                                                                                     setNewToolRuleId('');
+                                                                                     setNewToolRuleDefaultVal('');
+                                                                                 }}
+                                                                                 className="w-full flex items-center justify-center gap-1.5 py-2 bg-white hover:bg-[#fcb7f0]/10 dark:bg-[#111827] dark:hover:bg-[#fcb7f0]/5 border border-dashed border-[#fcb7f0]/60 text-[#8e5a7d] dark:text-[#fcb7f0] text-xs font-bold rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed mt-auto"
+                                                                             >
+                                                                                 <Plus size={12} strokeWidth={3} className="text-[#8e5a7d] dark:text-[#fcb7f0]" /> Add Surgical Tool
+                                                                             </button>
+                                                                         )}
+                                                                     </div>
+                                                                     
+                                                                     {/* 2. Pre-Op Actions Column (Right) */}
+                                                                     <div className="flex flex-col h-full bg-gray-50/30 dark:bg-slate-800/10 border border-gray-100 dark:border-slate-800/60 rounded-2xl p-3 sm:p-4">
+                                                                         <div className="flex items-center gap-1.5 mb-3 pb-1 border-b border-gray-100 dark:border-slate-800/80">
+                                                                             <span className="w-1 h-2 bg-indigo-400 dark:bg-indigo-500 rounded-full"></span>
+                                                                             <span className="text-[9px] font-black uppercase tracking-widest text-indigo-700 dark:text-indigo-400">Pre-Op Actions</span>
+                                                                         </div>
+                                                                         
+                                                                         <div className="flex-1 space-y-2 mb-3">
+                                                                             {opRules.filter(r => r.target_type === 'action').length === 0 ? (
+                                                                                 <div className="py-6 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
+                                                                                     No pre-op actions triggered yet.
+                                                                                 </div>
+                                                                             ) : (
+                                                                                 opRules.filter(r => r.target_type === 'action').map(rule => {
+                                                                                     const action = config.actions.find(a => a.id === rule.target_id);
+                                                                                     const targetName = action ? action.item : rule.target_id;
+                                                                                     return (
+                                                                                         <div 
+                                                                                             key={rule.id} 
+                                                                                             className="bg-white dark:bg-[#111827] border border-gray-100 dark:border-slate-800/60 p-2 rounded-xl flex items-center justify-between gap-3 text-xs"
+                                                                                         >
+                                                                                             <span className="font-bold text-gray-800 dark:text-slate-200 text-xs">
+                                                                                                 {targetName}
+                                                                                             </span>
+                                                                                             <button
+                                                                                                 onClick={() => !isOffline && handleDeleteRule(rule.id)}
+                                                                                                 disabled={isOffline}
+                                                                                                 className="text-gray-400 hover:text-red-500 disabled:opacity-30 disabled:hover:text-gray-400 disabled:cursor-not-allowed p-1 rounded transition-colors"
+                                                                                                 title="Remove trigger"
+                                                                                             >
+                                                                                                 <Trash2 size={12} />
+                                                                                             </button>
+                                                                                         </div>
+                                                                                     );
+                                                                                 })
+                                                                             )}
+                                                                         </div>
+                                                                         
+                                                                         {/* Add action inline row at the last row of the column */}
+                                                                         {isAddingActionRule ? (
+                                                                             <div className="bg-white dark:bg-[#111827] border border-dashed border-gray-200 dark:border-slate-800/80 p-2.5 rounded-xl space-y-2 mt-auto">
+                                                                                 <div className="flex items-center justify-between border-b border-gray-100 dark:border-slate-800 pb-1.5 mb-1.5">
+                                                                                     <span className="text-[8px] font-black uppercase tracking-wider text-gray-400 dark:text-slate-500 block">Add Pre-Op Action Triggers</span>
+                                                                                  <div className="flex items-center justify-center">
+                                                                                         <button
+                                                                                             type="button"
+                                                                                             onClick={() => !isOffline && handleSaveQueuedActionRules(op.id, opRules)}
+                                                                                             disabled={isOffline || pendingActionRules.filter(id => id).length === 0}
+                                                                                             className="text-emerald-500 hover:text-emerald-600 disabled:opacity-30 disabled:hover:text-emerald-500 p-0.5 transition-colors"
+                                                                                             title="Save triggers"
+                                                                                         >
+                                                                                             <Save size={14} />
+                                                                                         </button>
+                                                                                         <button
+                                                                                             type="button"
+                                                                                             onClick={() => {
+                                                                                                 setIsAddingActionRule(false);
+                                                                                                 setPendingActionRules([]);
+                                                                                             }}
+                                                                                             className="text-gray-400 hover:text-gray-600 dark:text-slate-550 dark:hover:text-slate-400 p-0.5 transition-colors"
+                                                                                             title="Exit"
+                                                                                         >
+                                                                                             <X size={14} />
+                                                                                         </button>
+                                                                                     </div>
+                                                                                 </div>
+                                                                                 
+                                                                                 <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                                                                                     {pendingActionRules.map((actionId, idx) => {
+                                                                                         return (
+                                                                                             <div key={idx} className="flex gap-2 items-center">
+                                                                                                 <div className="relative flex-1">
+                                                                                                     <select
+                                                                                                         value={actionId}
+                                                                                                         onChange={e => {
+                                                                                                             const newId = e.target.value;
+                                                                                                             setPendingActionRules(prev => prev.map((item, i) => 
+                                                                                                                 i === idx ? newId : item
+                                                                                                             ));
+                                                                                                         }}
+                                                                                                         className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg pl-2.5 pr-8 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200 appearance-none"
+                                                                                                     >
+                                                                                                         <option value="">- Select Action -</option>
+                                                                                                         {actionRuleOptions.map(opt => (
+                                                                                                             <option key={opt.id} value={opt.id}>{opt.name}</option>
+                                                                                                         ))}
+                                                                                                     </select>
+                                                                                                     <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                                                                                 </div>
+                                                                                                 
+                                                                                                 {pendingActionRules.length > 1 && (
+                                                                                                     <button
+                                                                                                         type="button"
+                                                                                                         onClick={() => {
+                                                                                                             setPendingActionRules(prev => prev.filter((_, i) => i !== idx));
+                                                                                                         }}
+                                                                                                         className="text-gray-400 hover:text-red-500 p-1 rounded transition-colors shrink-0"
+                                                                                                         title="Remove this action row"
+                                                                                                     >
+                                                                                                         <Trash2 size={12} />
+                                                                                                     </button>
+                                                                                                 )}
+                                                                                             </div>
+                                                                                         );
+                                                                                     })}
+                                                                                 </div>
 
-                                                                            return (
-                                                                                <div 
-                                                                                    key={rule.id} 
-                                                                                    className="bg-white dark:bg-[#111827] border border-gray-100 dark:border-slate-800/80 p-2.5 rounded-xl flex items-center justify-between gap-3 text-xs"
-                                                                                >
-                                                                                    <div className="flex flex-col">
-                                                                                        <div className="flex items-center gap-1.5">
-                                                                                            <span className={`px-1.5 py-0.5 text-[8px] font-black uppercase rounded leading-none shrink-0 ${
-                                                                                                rule.target_type === 'tool' 
-                                                                                                    ? 'bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-400' 
-                                                                                                    : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-400'
-                                                                                            }`}>
-                                                                                                {rule.target_type}
-                                                                                            </span>
-                                                                                            <span className="font-bold text-gray-800 dark:text-slate-200">
-                                                                                                {targetName}
-                                                                                            </span>
-                                                                                        </div>
-                                                                                        {rule.default_selected_value && (
-                                                                                            <span className="text-[9px] text-gray-450 dark:text-slate-400 font-semibold mt-1">
-                                                                                                Default select: {rule.default_selected_value}
-                                                                                            </span>
-                                                                                        )}
-                                                                                    </div>
-                                                                                    <button
-                                                                                        onClick={() => handleDeleteRule(rule.id)}
-                                                                                        className="text-gray-400 hover:text-red-500 p-1 rounded transition-colors"
-                                                                                        title="Remove trigger"
-                                                                                    >
-                                                                                        <Trash2 size={12} />
-                                                                                    </button>
-                                                                                </div>
-                                                                            );
-                                                                        })}
-                                                                    </div>
-                                                                )}
-
-                                                                {/* Add new rule inline panel */}
-                                                                <div className="bg-white dark:bg-[#111827] border border-dashed border-gray-200 dark:border-slate-800 p-3 sm:p-4 rounded-xl space-y-3">
-                                                                    <h5 className="text-[9px] font-black uppercase tracking-wider text-gray-400 dark:text-slate-500">Add Checklist Trigger Rule</h5>
-                                                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                                                        <div>
-                                                                            <select
-                                                                                value={newRuleTargetType}
-                                                                                onChange={e => handleRuleTargetTypeChange(e.target.value as any)}
-                                                                                className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200"
-                                                                            >
-                                                                                <option value="tool">Surgical Tool</option>
-                                                                                <option value="action">Pre-Op Action</option>
-                                                                            </select>
-                                                                        </div>
-                                                                        <div>
-                                                                            <select
-                                                                                value={newRuleTargetId}
-                                                                                onChange={e => setNewRuleTargetId(e.target.value)}
-                                                                                className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200"
-                                                                            >
-                                                                                <option value="">- Select Item -</option>
-                                                                                {ruleTargetOptions.map(opt => (
-                                                                                    <option key={opt.id} value={opt.id}>{opt.name}</option>
-                                                                                ))}
-                                                                            </select>
-                                                                        </div>
-                                                                        <div>
-                                                                            {selectedToolOptions ? (
-                                                                                <select
-                                                                                    value={newRuleDefaultVal}
-                                                                                    onChange={e => setNewRuleDefaultVal(e.target.value)}
-                                                                                    className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200"
-                                                                                >
-                                                                                    <option value="">- Selection (Opt) -</option>
-                                                                                    {selectedToolOptions.map(o => (
-                                                                                        <option key={o.value} value={o.value}>{o.label}</option>
-                                                                                    ))}
-                                                                                </select>
-                                                                            ) : newRuleTargetType === 'tool' ? (
-                                                                                <input
-                                                                                    type="text"
-                                                                                    placeholder="Default value (optional)"
-                                                                                    value={newRuleDefaultVal}
-                                                                                    onChange={e => setNewRuleDefaultVal(e.target.value)}
-                                                                                    className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200"
-                                                                                />
-                                                                            ) : (
-                                                                                <div className="w-full h-8 flex items-center justify-center text-[10px] text-gray-400 dark:text-slate-650 bg-gray-50/50 dark:bg-slate-850 rounded border border-gray-150 dark:border-slate-800 select-none">
-                                                                                    No value config
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                    <button
-                                                                        onClick={() => handleAddRule(op.id)}
-                                                                        className="px-3 py-1 bg-[#fcb7f0]/20 hover:bg-[#fcb7f0]/40 text-[#8e5a7d] dark:text-[#fcb7f0] rounded text-[10px] font-black transition-all border border-[#fcb7f0]/30 uppercase tracking-wider flex items-center gap-1"
-                                                                    >
-                                                                        <Plus size={10} strokeWidth={3} /> Add Trigger
-                                                                    </button>
-                                                                </div>
-                                                            </div>
+                                                                                 <div className="pt-1.5 flex justify-start">
+                                                                                     <button
+                                                                                         type="button"
+                                                                                         onClick={() => {
+                                                                                             setPendingActionRules(prev => [...prev, '']);
+                                                                                         }}
+                                                                                         className="flex items-center gap-1 bg-[#fcb7f0]/10 hover:bg-[#fcb7f0]/20 text-[#8e5a7d] dark:text-[#fcb7f0] border border-[#fcb7f0]/20 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-wider transition-all"
+                                                                                     >
+                                                                                         <Plus size={10} strokeWidth={3} className="text-[#8e5a7d] dark:text-[#fcb7f0]" /> Add another action
+                                                                                     </button>
+                                                                                 </div>
+                                                                             </div>
+                                                                         ) : (
+                                                                             <button
+                                                                                 type="button"
+                                                                                 disabled={isOffline}
+                                                                                 onClick={() => {
+                                                                                     setIsAddingActionRule(true);
+                                                                                     setPendingActionRules(['']);
+                                                                                 }}
+                                                                                 className="w-full flex items-center justify-center gap-1.5 py-2 bg-white hover:bg-[#fcb7f0]/10 dark:bg-[#111827] dark:hover:bg-[#fcb7f0]/5 border border-dashed border-[#fcb7f0]/60 text-[#8e5a7d] dark:text-[#fcb7f0] text-xs font-bold rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed mt-auto"
+                                                                             >
+                                                                                 <Plus size={12} strokeWidth={3} className="text-[#8e5a7d] dark:text-[#fcb7f0]" /> Add Pre-Op Action
+                                                                             </button>
+                                                                         )}
+                                                                     </div>
+                                                                 </div>
+                                                             </div>
                                                         </div>
                                                     )}
                                                 </div>

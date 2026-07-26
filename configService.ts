@@ -1,4 +1,11 @@
 import { supabase } from './supabase';
+import { 
+  FALLBACK_ACTIONS, 
+  FALLBACK_TOOLS, 
+  FALLBACK_OPERATIONS, 
+  FALLBACK_RULES, 
+  FALLBACK_PRICES 
+} from './localConfigData';
 
 export interface DBTool {
   id: string;
@@ -8,11 +15,13 @@ export interface DBTool {
   default_value: any;
   sort_order?: number;
   category?: string;
+  is_active?: boolean;
 }
 
 export interface DBAction {
   id: string;
   item: string;
+  is_active?: boolean;
 }
 
 export interface DBOperation {
@@ -41,25 +50,56 @@ export interface DBPrice {
 }
 
 export const fetchConfig = async () => {
-  const [
-    { data: tools },
-    { data: actions },
-    { data: operations },
-    { data: rules },
-    { data: prices }
-  ] = await Promise.all([
-    supabase.from('tools').select('*').eq('is_active', true),
-    supabase.from('actions').select('*').eq('is_active', true),
-    supabase.from('operations').select('*'),
-    supabase.from('operation_rules').select('*'),
-    supabase.from('tool_prices').select('*')
-  ]);
+  try {
+    const [
+      { data: tools, error: toolsErr },
+      { data: actions, error: actionsErr },
+      { data: operations, error: operationsErr },
+      { data: rules, error: rulesErr },
+      { data: prices, error: pricesErr }
+    ] = await Promise.all([
+      supabase.from('tools').select('*').eq('is_active', true),
+      supabase.from('actions').select('*').eq('is_active', true),
+      supabase.from('operations').select('*'),
+      supabase.from('operation_rules').select('*'),
+      supabase.from('tool_prices').select('*')
+    ]);
 
-  return {
-    tools: (tools || []) as DBTool[],
-    actions: (actions || []) as DBAction[],
-    operations: (operations || []) as DBOperation[],
-    rules: (rules || []) as DBRule[],
-    prices: (prices || []) as DBPrice[]
-  };
+    if (toolsErr || actionsErr || operationsErr || rulesErr || pricesErr || !tools || tools.length === 0) {
+      const err = toolsErr || actionsErr || operationsErr || rulesErr || pricesErr;
+      if (err) {
+        console.warn('Supabase fetch failed or returned error, falling back to local configuration:', err);
+      } else {
+        console.warn('Supabase database is empty, falling back to local configuration.');
+      }
+      return {
+        tools: FALLBACK_TOOLS,
+        actions: FALLBACK_ACTIONS,
+        operations: FALLBACK_OPERATIONS,
+        rules: FALLBACK_RULES,
+        prices: FALLBACK_PRICES,
+        isFallback: true
+      };
+    }
+
+    return {
+      tools: tools as DBTool[],
+      actions: actions as DBAction[],
+      operations: operations as DBOperation[],
+      rules: rules as DBRule[],
+      prices: prices as DBPrice[],
+      isFallback: false
+    };
+  } catch (error) {
+    console.warn('Supabase network connection failed, falling back to local configuration:', error);
+    return {
+      tools: FALLBACK_TOOLS,
+      actions: FALLBACK_ACTIONS,
+      operations: FALLBACK_OPERATIONS,
+      rules: FALLBACK_RULES,
+      prices: FALLBACK_PRICES,
+      isFallback: true
+    };
+  }
 };
+
