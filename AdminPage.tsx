@@ -1022,14 +1022,14 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
     const [newRuleTargetId, setNewRuleTargetId] = useState('');
     const [newRuleDefaultVal, setNewRuleDefaultVal] = useState('');
 
-    // Separate columns for Tool/Action trigger additions
-    const [newToolRuleId, setNewToolRuleId] = useState('');
-    const [newToolRuleDefaultVal, setNewToolRuleDefaultVal] = useState('');
-    const [isAddingToolRule, setIsAddingToolRule] = useState(false);
-    const [pendingToolRules, setPendingToolRules] = useState<{ target_id: string; default_selected_value: string | null }[]>([]);
-    const [newActionRuleId, setNewActionRuleId] = useState('');
-    const [isAddingActionRule, setIsAddingActionRule] = useState(false);
-    const [pendingActionRules, setPendingActionRules] = useState<string[]>([]);
+    // Edit operation draft rules (tools & pre-op actions saved on card save)
+    const [editOpRules, setEditOpRules] = useState<Array<{
+        id?: string;
+        operation_id: string;
+        target_type: 'tool' | 'action';
+        target_id: string;
+        default_selected_value: string | null;
+    }>>([]);
 
     const categories = ['Lens Surgery', 'Retinal Surgery', 'Glaucoma', 'Cornea', 'Oculoplastics', 'Strabismus', 'Others'];
 
@@ -1165,6 +1165,40 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
         setEditOpCategory(op.category);
         setEditOpKeywords([...op.keywords]);
         setEditOpKeywordInput('');
+        
+        // Copy current DB rules for this operation into draft state
+        const currentRules = config?.rules.filter(r => r.operation_id === op.id) || [];
+        setEditOpRules(currentRules.map(r => ({
+            id: r.id,
+            operation_id: r.operation_id,
+            target_type: r.target_type,
+            target_id: r.target_id,
+            default_selected_value: r.default_selected_value || null
+        })));
+    };
+
+    const hasOpEditChanges = (opId: string): boolean => {
+        if (editOpId !== opId) return false;
+        const op = config?.operations.find(o => o.id === opId);
+        if (!op) return false;
+
+        if (editOpName.trim() !== op.name) return true;
+        if (editOpCategory !== op.category) return true;
+        if (editOpKeywords.join(', ') !== op.keywords.join(', ')) return true;
+
+        const dbRules = config?.rules.filter(r => r.operation_id === opId) || [];
+        const validRules = editOpRules.filter(r => r.target_id.trim() !== '');
+        if (validRules.length !== dbRules.length) return true;
+
+        for (let i = 0; i < validRules.length; i++) {
+            const vr = validRules[i];
+            const dr = dbRules[i];
+            if (!dr) return true;
+            if (vr.id !== dr.id || vr.target_type !== dr.target_type || vr.target_id !== dr.target_id || (vr.default_selected_value || null) !== (dr.default_selected_value || null)) {
+                return true;
+            }
+        }
+        return false;
     };
 
     const handleSaveOperationDetails = async (opId: string) => {
@@ -1191,9 +1225,34 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
             finalKeywords.push(trimmedInput);
         }
 
+        // Validate rules (filter out empty rows)
+        const validRules = editOpRules.filter(r => r.target_id.trim() !== '');
+
+        // Check for duplicate triggers within validRules
+        const toolSeen = new Set<string>();
+        const actionSeen = new Set<string>();
+        for (const r of validRules) {
+            if (r.target_type === 'tool') {
+                if (toolSeen.has(r.target_id)) {
+                    const tool = config?.tools.find(t => t.id === r.target_id);
+                    showToast(`Surgical tool "${tool ? tool.item : r.target_id}" is selected more than once.`, 'error');
+                    return;
+                }
+                toolSeen.add(r.target_id);
+            } else if (r.target_type === 'action') {
+                if (actionSeen.has(r.target_id)) {
+                    const action = config?.actions.find(a => a.id === r.target_id);
+                    showToast(`Pre-Op action "${action ? action.item : r.target_id}" is selected more than once.`, 'error');
+                    return;
+                }
+                actionSeen.add(r.target_id);
+            }
+        }
+
         setLoading('Saving operation details...');
         try {
-            const { error } = await supabase
+            // 1. Update operation metadata
+            const { error: opErr } = await supabase
                 .from('operations')
                 .update({
                     name: editOpName.trim(),
@@ -1202,9 +1261,58 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                 })
                 .eq('id', opId);
 
-            if (error) throw error;
+            if (opErr) throw opErr;
+
+            // 2. Sync rules in Supabase
+            const dbRules = config?.rules.filter(r => r.operation_id === opId) || [];
+            const dbRuleIds = dbRules.map(r => r.id);
+
+            // A) Delete removed rules
+            const validRuleIds = validRules.map(r => r.id).filter(Boolean);
+            const idsToDelete = dbRuleIds.filter(id => !validRuleIds.includes(id));
+            if (idsToDelete.length > 0) {
+                const { error: delErr } = await supabase
+                    .from('operation_rules')
+                    .delete()
+                    .in('id', idsToDelete);
+                if (delErr) throw delErr;
+            }
+
+            // B) Insert new rules
+            const newRulesToInsert = validRules
+                .filter(r => !r.id)
+                .map(r => ({
+                    operation_id: opId,
+                    target_type: r.target_type,
+                    target_id: r.target_id,
+                    default_selected_value: r.default_selected_value ? r.default_selected_value.trim() || null : null
+                }));
+
+            if (newRulesToInsert.length > 0) {
+                const { error: insErr } = await supabase
+                    .from('operation_rules')
+                    .insert(newRulesToInsert);
+                if (insErr) throw insErr;
+            }
+
+            // C) Update existing rules if target_id or default_selected_value changed
+            for (const r of validRules.filter(r => r.id)) {
+                const orig = dbRules.find(d => d.id === r.id);
+                if (orig && (orig.target_id !== r.target_id || (orig.default_selected_value || null) !== (r.default_selected_value || null))) {
+                    const { error: upErr } = await supabase
+                        .from('operation_rules')
+                        .update({
+                            target_id: r.target_id,
+                            default_selected_value: r.default_selected_value ? r.default_selected_value.trim() || null : null
+                        })
+                        .eq('id', r.id);
+                    if (upErr) throw upErr;
+                }
+            }
+
             showToast('Operation updated successfully', 'success');
             setEditOpId(null);
+            setEditOpRules([]);
             await onRefresh();
         } catch (err: any) {
             showToast(err.message || 'Error updating operation', 'error');
@@ -1245,140 +1353,17 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
         }
     };
 
-    // --- Rules Logic ---
-    const handleSaveQueuedToolRules = async (opId: string, opRules: DBRule[]) => {
-        const validPending = pendingToolRules.filter(r => r.target_id);
-        if (validPending.length === 0) {
-            setIsAddingToolRule(false);
-            return;
-        }
-
-        // Validate duplicates within the database rules
-        for (const item of validPending) {
-            if (opRules.some(r => r.target_type === 'tool' && r.target_id === item.target_id)) {
-                const tool = config.tools.find(t => t.id === item.target_id);
-                showToast(`Surgical tool "${tool ? tool.item : item.target_id}" is already triggered in this operation.`, 'error');
-                return;
-            }
-        }
-
-        // Validate duplicates within the pending array itself
-        const ids = validPending.map(r => r.target_id);
-        const hasDuplicates = ids.some((val, i) => ids.indexOf(val) !== i);
-        if (hasDuplicates) {
-            showToast('Please remove duplicate tool selections before saving.', 'error');
-            return;
-        }
-
-        setLoading('Saving tool triggers...');
-        try {
-            const { error } = await supabase
-                .from('operation_rules')
-                .insert(validPending.map(item => ({
-                    operation_id: opId,
-                    target_type: 'tool',
-                    target_id: item.target_id,
-                    default_selected_value: item.default_selected_value ? item.default_selected_value.trim() || null : null
-                })));
-
-            if (error) throw error;
-            showToast('Tool triggers saved successfully', 'success');
-            setPendingToolRules([]);
-            setIsAddingToolRule(false);
-            await onRefresh();
-        } catch (err: any) {
-            showToast(err.message || 'Error saving rules', 'error');
-        } finally {
-            setLoading(null);
-        }
-    };
-
-    const handleSaveQueuedActionRules = async (opId: string, opRules: DBRule[]) => {
-        const validPending = pendingActionRules.filter(id => id);
-        if (validPending.length === 0) {
-            setIsAddingActionRule(false);
-            return;
-        }
-
-        // Validate duplicates within the database rules
-        for (const actionId of validPending) {
-            if (opRules.some(r => r.target_type === 'action' && r.target_id === actionId)) {
-                const action = config.actions.find(a => a.id === actionId);
-                showToast(`Pre-Op action "${action ? action.item : actionId}" is already triggered in this operation.`, 'error');
-                return;
-            }
-        }
-
-        // Validate duplicates within the pending array itself
-        const hasDuplicates = validPending.some((val, i) => validPending.indexOf(val) !== i);
-        if (hasDuplicates) {
-            showToast('Please remove duplicate action selections before saving.', 'error');
-            return;
-        }
-
-        setLoading('Saving action triggers...');
-        try {
-            const { error } = await supabase
-                .from('operation_rules')
-                .insert(validPending.map(actionId => ({
-                    operation_id: opId,
-                    target_type: 'action',
-                    target_id: actionId,
-                    default_selected_value: null
-                })));
-
-            if (error) throw error;
-            showToast('Action triggers saved successfully', 'success');
-            setPendingActionRules([]);
-            setIsAddingActionRule(false);
-            await onRefresh();
-        } catch (err: any) {
-            showToast(err.message || 'Error saving rules', 'error');
-        } finally {
-            setLoading(null);
-        }
-    };
-
-    const handleDeleteRule = async (ruleId: string) => {
-        if (!window.confirm('Delete this trigger rule?')) return;
-        setLoading('Deleting rule...');
-        try {
-            const { error } = await supabase
-                .from('operation_rules')
-                .delete()
-                .eq('id', ruleId);
-
-            if (error) throw error;
-            showToast('Rule deleted successfully', 'success');
-            await onRefresh();
-        } catch (err: any) {
-            showToast(err.message || 'Error deleting rule', 'error');
-        } finally {
-            setLoading(null);
-        }
-    };
-
     const handleOpClick = (targetOpId: string) => {
         const isExpanded = expandedOpId === targetOpId;
-        const hasUnsavedChanges = 
-            (isAddingToolRule && pendingToolRules.some(r => r.target_id)) ||
-            (isAddingActionRule && pendingActionRules.some(id => id));
-
-        if (hasUnsavedChanges) {
-            const msg = isExpanded 
-                ? 'You have unsaved tool/action triggers. Do you want to discard them and collapse?' 
-                : 'You have unsaved tool/action triggers. Do you want to discard them and switch operations?';
-            if (!window.confirm(msg)) {
-                return;
+        if (editOpId) {
+            if (hasOpEditChanges(editOpId)) {
+                if (!window.confirm('You have unsaved operation changes. Do you want to discard them?')) {
+                    return;
+                }
             }
+            setEditOpId(null);
+            setEditOpRules([]);
         }
-        
-        // Reset states
-        setIsAddingToolRule(false);
-        setPendingToolRules([]);
-        setIsAddingActionRule(false);
-        setPendingActionRules([]);
-        
         setExpandedOpId(isExpanded ? null : targetOpId);
     };
 
@@ -1408,12 +1393,6 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
             category: t.category || 'Generals'
         }));
     }, [config?.tools]);
-
-    const selectedToolRuleOptions = useMemo(() => {
-        if (!config?.tools || !newToolRuleId) return null;
-        const tool = config.tools.find(t => t.id === newToolRuleId);
-        return tool?.options || null;
-    }, [config?.tools, newToolRuleId]);
 
     const actionRuleOptions = useMemo(() => {
         if (!config?.actions) return [];
@@ -1554,15 +1533,23 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                         </div>
                     </div>
 
-                    {/* Add Tool Form */}
+                    {/* Add Tool Form Modal */}
                     {showAddToolForm && (
-                        <div className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-5 animate-slideDown transition-all duration-300">
-                            <div className="flex justify-between items-center mb-4 border-b border-gray-50 dark:border-slate-800 pb-2">
-                                <h3 className="text-xs font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide flex items-center gap-2">
-                                    <Plus size={16} className="text-[#8e5a7d] dark:text-brand-primary-dark" />
-                                    Add New Tool
-                                </h3>
-                            </div>
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn p-4">
+                            <div className="bg-white dark:bg-[#151f32] rounded-2xl shadow-xl border border-gray-150 dark:border-slate-800 p-5 sm:p-6 w-full max-w-4xl animate-scaleUp overflow-y-auto max-h-[90vh]">
+                                <div className="flex justify-between items-center mb-4 border-b border-gray-50 dark:border-slate-800 pb-2">
+                                    <h3 className="text-xs font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide flex items-center gap-2">
+                                        <Plus size={16} className="text-[#8e5a7d] dark:text-brand-primary-dark" />
+                                        Add New Tool
+                                    </h3>
+                                    <button 
+                                        type="button"
+                                        onClick={handleCloseAddToolForm}
+                                        className="text-gray-400 hover:text-gray-500 transition-colors p-1"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                </div>
                             <form onSubmit={handleAddToolSubmit} className="mt-4 p-4 border border-dashed border-gray-200 dark:border-slate-700 rounded-xl space-y-4">
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                     <div>
@@ -1768,6 +1755,121 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                 </div>
                             </form>
                         </div>
+                    </div>
+                )}
+                    {/* Add Subtype Form Modal */}
+                    {activeAddSubtypeTool && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn p-4">
+                            <div className="bg-white dark:bg-[#151f32] rounded-2xl shadow-xl border border-gray-150 dark:border-slate-800 p-5 sm:p-6 w-full max-w-2xl animate-scaleUp overflow-y-auto max-h-[90vh]">
+                                <div className="flex justify-between items-center mb-4 border-b border-gray-50 dark:border-slate-800 pb-2">
+                                    <h3 className="text-xs font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide flex items-center gap-2">
+                                        <Plus size={16} className="text-[#8e5a7d] dark:text-brand-primary-dark" />
+                                        Add Subtype Option (Group: {activeAddSubtypeTool.item})
+                                    </h3>
+                                    <button 
+                                        type="button"
+                                        onClick={() => setActiveAddSubtypeTool(null)}
+                                        className="text-gray-400 hover:text-gray-500 transition-colors p-1"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                </div>
+                                <form onSubmit={handleAddSubtypeSubmit} className="mt-4 p-4 border border-dashed border-gray-200 dark:border-slate-700 rounded-xl space-y-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Group Name</label>
+                                            <input
+                                                type="text"
+                                                value={activeAddSubtypeTool.item}
+                                                disabled
+                                                className="w-full bg-gray-150 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-bold text-gray-400 dark:text-slate-400 outline-none cursor-not-allowed"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Subtype Display Name</label>
+                                            <input
+                                                type="text"
+                                                value={newSubtypeDisplayName}
+                                                onChange={e => {
+                                                    setNewSubtypeDisplayName(e.target.value);
+                                                    if (!newSubtypeKey) {
+                                                        setNewSubtypeKey(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-'));
+                                                    }
+                                                }}
+                                                placeholder="e.g. Centurion Active Sentry"
+                                                className="w-full bg-gray-50 dark:bg-slate-850 border border-gray-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Subtype Key ID</label>
+                                            <input
+                                                type="text"
+                                                value={newSubtypeKey}
+                                                onChange={e => setNewSubtypeKey(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                                                placeholder="e.g. active-sentry"
+                                                className="w-full bg-gray-50 dark:bg-slate-850 border border-gray-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">CSMBS Price (฿)</label>
+                                            <input
+                                                type="number"
+                                                value={newSubtypeCsmbs}
+                                                onChange={e => setNewSubtypeCsmbs(Number(e.target.value))}
+                                                placeholder="0"
+                                                className="w-full bg-gray-50 dark:bg-slate-850 border border-gray-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
+                                                min="0"
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">SSS Price (฿)</label>
+                                            <input
+                                                type="number"
+                                                value={newSubtypeSss}
+                                                onChange={e => setNewSubtypeSss(Number(e.target.value))}
+                                                placeholder="0"
+                                                className="w-full bg-gray-50 dark:bg-slate-850 border border-gray-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
+                                                min="0"
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">UCS Price (฿)</label>
+                                            <input
+                                                type="number"
+                                                value={newSubtypeUcs}
+                                                onChange={e => setNewSubtypeUcs(Number(e.target.value))}
+                                                placeholder="0"
+                                                className="w-full bg-gray-50 dark:bg-slate-855 border border-gray-255 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
+                                                min="0"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-end gap-2 pt-2 border-t border-gray-50 dark:border-slate-800">
+                                        <button
+                                            type="button"
+                                            onClick={() => setActiveAddSubtypeTool(null)}
+                                            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-350 text-xs font-bold rounded-lg transition-all"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-all flex items-center gap-1"
+                                        >
+                                            <Save size={14} />
+                                            Save Subtype
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
                     )}
 
                     {CATEGORY_ORDER.map(category => {
@@ -1922,7 +2024,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                             <tbody className="divide-y divide-gray-50 dark:divide-slate-800/30">
                                                 {items.map((price, idx) => {
                                                     const tool = config.tools.find(t => t.id === price.tool_id);
-                                                    const isEditing = editingCategory === category;
+                                                    const isEditingRow = (editingCategory === category) || (editingPriceId === price.id);
                                                      const isFirstOccurrence = items.findIndex(item => item.tool_id === price.tool_id) === idx;
                                                      const isLastOccurrence = (() => {
                                                          let lastIdx = -1;
@@ -1936,7 +2038,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                      })();
                                                      const isNewReuseTool = tool?.options?.some((o: any) => o.value === NEW_REUSED_OPTIONS.NEW || o.value === NEW_REUSED_OPTIONS.REUSED);
                                                      const toolPricesCount = items.filter(item => item.tool_id === price.tool_id).length;
-                                                     const hasSubtypes = (toolPricesCount > 1 || (tool && (tool.type === 'radio' || (tool.options && tool.options.length > 0)))) && !isNewReuseTool;
+                                                     const hasSubtypes = toolPricesCount > 1 && !isNewReuseTool;
                                                      const showGroupHeader = hasSubtypes && isFirstOccurrence && (editingCategory === category);
                                                     const rowData = editPricesData[price.id] || {
                                                         displayName: price.display_name || getToolDisplayName(price.tool_id, tool ? tool.item : price.tool_id, price.sub_key),
@@ -1995,7 +2097,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                                  type="button"
                                                                                  onClick={() => handleDeleteTool(price.tool_id)}
                                                                                  disabled={loading !== null || isOffline}
-                                                                                 className="p-1.5 text-[#991b1b] hover:text-[#7f1d1d] bg-red-100/70 hover:bg-red-200/90 border border-red-300 dark:text-red-300 dark:hover:text-red-100 dark:bg-red-950/50 dark:hover:bg-red-900/70 dark:border-red-800 rounded transition-all shrink-0"
+                                                                                 className="p-1.5 text-red-50 hover:text-white bg-red-800/90 hover:bg-red-900 border border-red-900 dark:text-red-100 dark:hover:text-white dark:bg-red-950/80 dark:hover:bg-red-950 dark:border-red-900 rounded transition-all shrink-0"
                                                                                  title={`Delete Entire "${tool ? tool.item : price.tool_id}" Tool`}
                                                                              >
                                                                                  <Trash2 size={13} />
@@ -2006,7 +2108,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                             )}
                                                             <tr
                                                                 key={price.id}
-                                                            draggable={isEditing && !isOffline}
+                                                            draggable={isEditingRow && !isOffline}
                                                             onDragStart={(e) => {
                                                                 setDraggedToolId(price.tool_id);
                                                                 setDraggedCategory(category);
@@ -2046,7 +2148,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                         >
                                                             <td className="py-3 px-2">
                                                                 <div className="flex items-center gap-2">
-                                                                    {isEditing && (
+                                                                    {isEditingRow && (
                                                                         isFirstOccurrence ? (
                                                                             <Menu
                                                                                 size={14}
@@ -2057,15 +2159,22 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                             <div className="w-3.5 shrink-0" />
                                                                         )
                                                                     )}
-                                                                    {isEditing ? (
+                                                                    {isEditingRow ? (
                                                                         <div className="flex flex-col gap-1.5 w-full">
-                                                                            <input
-                                                                                type="text"
-                                                                                value={rowData.displayName}
-                                                                                onChange={e => handleUpdateEditField(price.id, 'displayName', e.target.value, price, tool)}
-                                                                                className="w-full p-1 border border-gray-250 dark:border-slate-700 bg-white dark:bg-slate-850 rounded text-xs font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200"
-                                                                                placeholder="Display Name"
-                                                                            />
+                                                                            <div className="flex items-center gap-1.5 w-full">
+                                                                                {editingCategory === category && price.sub_key && !isNewReuseTool && (
+                                                                                    <span className="text-gray-400 dark:text-slate-600 font-mono select-none pl-1 shrink-0">
+                                                                                        └─
+                                                                                    </span>
+                                                                                )}
+                                                                                <input
+                                                                                    type="text"
+                                                                                    value={rowData.displayName}
+                                                                                    onChange={e => handleUpdateEditField(price.id, 'displayName', e.target.value, price, tool)}
+                                                                                    className="w-full p-1 border border-gray-250 dark:border-slate-700 bg-white dark:bg-slate-850 rounded text-xs font-bold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200"
+                                                                                    placeholder="Display Name"
+                                                                                />
+                                                                            </div>
                                                                             <span className="text-[9px] text-gray-455 dark:text-slate-500 font-mono pl-1">
                                                                                 ID: {price.tool_id}
                                                                             </span>
@@ -2092,7 +2201,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                 )}
                                                             </td>
                                                             <td className="py-3 px-2 text-right">
-                                                                {isEditing ? (
+                                                                {isEditingRow ? (
                                                                     <input
                                                                         type="number"
                                                                         value={rowData.csmbs}
@@ -2106,7 +2215,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                 )}
                                                             </td>
                                                             <td className="py-3 px-2 text-right">
-                                                                {isEditing ? (
+                                                                {isEditingRow ? (
                                                                     <input
                                                                         type="number"
                                                                         value={rowData.sss}
@@ -2120,7 +2229,7 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                 )}
                                                             </td>
                                                             <td className="py-3 px-2 text-right">
-                                                                {isEditing ? (
+                                                                {isEditingRow ? (
                                                                     <input
                                                                         type="number"
                                                                         value={rowData.ucs}
@@ -2134,65 +2243,112 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                 )}
                                                             </td>
                                                             <td className="py-3 px-2 text-center">
-                                                                {isEditing ? (
+                                                                {isEditingRow ? (
+                                                                    editingCategory === category ? (
+                                                                        <div className="flex items-center justify-center gap-1.5">
+                                                                                {/* The Add Subtype Option button was moved to a separate row at the bottom of the group */}
+                                                                               {price.sub_key ? (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleDeleteSubtype(price)}
+                                                                                        disabled={loading !== null || isOffline}
+                                                                                        className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
+                                                                                        title={`Delete Subtype "${price.sub_key}"`}
+                                                                                    >
+                                                                                        <Trash2 size={13} />
+                                                                                    </button>
+                                                                                ) : (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleDeleteTool(price.tool_id)}
+                                                                                        disabled={loading !== null || isOffline}
+                                                                                        className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
+                                                                                        title="Delete Tool"
+                                                                                    >
+                                                                                        <Trash2 size={13} />
+                                                                                    </button>
+                                                                                )}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="flex items-center justify-center gap-1.5">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleSavePriceRow(price.id)}
+                                                                                disabled={loading !== null}
+                                                                                className="p-1 text-emerald-500 hover:text-emerald-600 transition-colors"
+                                                                                title="Save"
+                                                                            >
+                                                                                <Save size={13} />
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    if (hasPriceRowChanges(price.id)) {
+                                                                                        const confirmCancel = window.confirm('Are you sure you want to discard your unsaved changes?');
+                                                                                        if (!confirmCancel) return;
+                                                                                    }
+                                                                                    setEditingPriceId(null);
+                                                                                }}
+                                                                                disabled={loading !== null}
+                                                                                className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                                                                                title="Cancel"
+                                                                            >
+                                                                                <X size={13} />
+                                                                            </button>
+                                                                            <div 
+                                                                                className={`relative p-1 text-[#8e5a7d] hover:text-[#734464] hover:bg-[#fcb7f0]/10 dark:text-[#fcb7f0] dark:hover:text-[#f78de3] dark:hover:bg-[#fcb7f0]/5 rounded transition-all flex items-center justify-center ${
+                                                                                    (loading !== null)
+                                                                                        ? 'opacity-50 cursor-not-allowed'
+                                                                                        : 'cursor-pointer'
+                                                                                }`}
+                                                                                title="Move Category"
+                                                                            >
+                                                                                <FolderSymlink size={13} />
+                                                                                <select
+                                                                                    value="move"
+                                                                                    disabled={loading !== null || isOffline}
+                                                                                    onChange={async (e) => {
+                                                                                        const newCat = e.target.value;
+                                                                                        if (newCat !== "move") {
+                                                                                            await handleMoveToolToPosition(price.tool_id, 'end', category, newCat);
+                                                                                            setEditingPriceId(null);
+                                                                                        }
+                                                                                    }}
+                                                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                                                                                >
+                                                                                    <option value="move" disabled hidden>Move</option>
+                                                                                    {CATEGORY_ORDER.map(cat => (
+                                                                                        <option key={cat} value={cat} disabled={cat === category}>
+                                                                                            {cat}
+                                                                                        </option>
+                                                                                    ))}
+                                                                                </select>
+                                                                            </div>
+                                                                        </div>
+                                                                    )
+                                                                ) : (
                                                                     <div className="flex items-center justify-center gap-1.5">
-                                                                             {tool && (tool.type === 'radio' || (tool.options && tool.options.length > 0)) && isFirstOccurrence && (
-                                                                                 <button
-                                                                                     type="button"
-                                                                                     onClick={() => setActiveAddSubtypeTool(tool)}
-                                                                                     disabled={loading !== null || isOffline}
-                                                                                     className="p-1 text-gray-500 hover:text-[#fcb7f0] dark:text-slate-405 dark:hover:text-[#fcb7f0] disabled:opacity-30 disabled:cursor-not-allowed rounded transition-all"
-                                                                                     title="Add Subtype Option"
-                                                                                 >
-                                                                                     <Plus size={13} strokeWidth={2.5} />
-                                                                                 </button>
-                                                                             )}
-                                                                            {price.sub_key ? (
-                                                                                 <button
-                                                                                     type="button"
-                                                                                     onClick={() => handleDeleteSubtype(price)}
-                                                                                     disabled={loading !== null || isOffline}
-                                                                                     className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
-                                                                                     title={`Delete Subtype "${price.sub_key}"`}
-                                                                                 >
-                                                                                     <Trash2 size={13} />
-                                                                                 </button>
-                                                                             ) : (
-                                                                                 <button
-                                                                                     type="button"
-                                                                                     onClick={() => handleDeleteTool(price.tool_id)}
-                                                                                     disabled={loading !== null || isOffline}
-                                                                                     className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
-                                                                                     title="Delete Tool"
-                                                                                 >
-                                                                                     <Trash2 size={13} />
-                                                                                 </button>
-                                                                             )}
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                if (hasUnsavedChanges()) {
+                                                                                    alert('You have unsaved changes. Please save or cancel your edits first.');
+                                                                                    return;
+                                                                                }
+                                                                                handleStartEditPriceRow(price);
+                                                                            }}
+                                                                            disabled={isOffline || editingPriceId !== null || editingCategory !== null}
+                                                                            className="p-1 text-gray-500 hover:text-[#fcb7f0] dark:text-slate-400 dark:hover:text-[#fcb7f0] disabled:opacity-30 disabled:cursor-not-allowed rounded transition-all"
+                                                                            title="Edit tool prices"
+                                                                        >
+                                                                            <Edit size={13} />
+                                                                        </button>
                                                                     </div>
-                                                                 ) : (
-                                                                     <div className="flex items-center justify-center gap-1.5">
-                                                                         <button
-                                                                             onClick={() => {
-                                                                                 if (editingCategory !== null && editingCategory !== category) {
-                                                                                     if (hasCategoryChanges(editingCategory)) {
-                                                                                         alert('You have unsaved changes. Please save or cancel your edits first.');
-                                                                                         return;
-                                                                                     }
-                                                                                 }
-                                                                                 handleStartEditCategory(category);
-                                                                             }}
-                                                                             disabled={isOffline}
-                                                                             className="p-1 text-gray-500 hover:text-[#fcb7f0] dark:text-slate-400 dark:hover:text-[#fcb7f0] rounded transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                                                             title="Edit tool prices"
-                                                                         >
-                                                                             <Edit size={13} />
-                                                                         </button>
-                                                                     </div>
-                                                                 )}
-                                                             </td>
-                                                         </tr>
-                                                     </>
-                                                 );
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    </>
+                                                );
                                                 })}
                                             </tbody>
                                         </table>
@@ -2476,60 +2632,41 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
 
                                                     {/* Expanded Operation Body */}
                                                     {isExpanded && (
-                                                        <div className="p-3 sm:p-4 border-t border-gray-50 dark:border-slate-800/80 bg-gray-50/30 dark:bg-slate-900/10 space-y-4 animate-slideDown">
-                                                            {/* edit details form */}
-                                                            <div className="p-3 bg-white dark:bg-[#111827] rounded-xl border border-gray-100 dark:border-slate-800 space-y-3">
-                                                                 <div className="flex items-center justify-end">
-                                                                     {!isEditingDetails ? (
-                                                                        <div className="flex gap-2">
-                                                                             <button
-                                                                                 onClick={() => !isOffline && handleStartEditOp(op)}
-                                                                                 disabled={isOffline}
-                                                                                 className="p-1 text-gray-500 hover:text-[#fcb7f0] disabled:opacity-30 disabled:hover:text-gray-500 disabled:cursor-not-allowed transition-colors"
-                                                                                 title="Edit details"
-                                                                             >
-                                                                                 <Edit size={14} />
-                                                                             </button>
-                                                                             <button
-                                                                                 onClick={() => !isOffline && handleDeleteOperation(op.id)}
-                                                                                 disabled={isOffline}
-                                                                                 className="p-1 text-gray-500 hover:text-red-500 disabled:opacity-30 disabled:hover:text-gray-500 disabled:cursor-not-allowed transition-colors"
-                                                                                 title="Delete operation"
-                                                                             >
-                                                                                 <Trash2 size={14} />
-                                                                             </button>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <div className="flex gap-1.5">
-                                                                            <button
-                                                                                onClick={() => handleSaveOperationDetails(op.id)}
-                                                                                className="p-1 text-emerald-500 hover:text-emerald-600 transition-colors"
-                                                                                title="Save details"
-                                                                            >
-                                                                                <Save size={14} />
-                                                                            </button>
+                                                        <div className="p-3 sm:p-4 border-t border-gray-50 dark:border-slate-800/80 bg-gray-50/30 dark:bg-slate-900/10 animate-slideDown">
+                                                            <div className="p-4 bg-white dark:bg-[#111827] rounded-2xl border border-gray-100 dark:border-slate-800 space-y-4 shadow-sm">
+                                                                {/* Top Details Section */}
+                                                                {isEditingDetails ? (
+                                                                    <div className="space-y-3 pb-3 border-b border-gray-100 dark:border-slate-800/80">
+                                                                        <div className="flex items-center justify-between">
+                                                                            <span className="text-[10px] font-extrabold text-[#8e5a7d] dark:text-[#fcb7f0] uppercase tracking-wider">
+                                                                                Edit Operation Details & Triggers
+                                                                            </span>
+                                                                            <div className="flex items-center gap-1.5">
                                                                                 <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleSaveOperationDetails(op.id)}
+                                                                                    className="p-1 text-emerald-500 hover:text-emerald-600 transition-colors"
+                                                                                    title="Save all changes"
+                                                                                >
+                                                                                    <Save size={16} />
+                                                                                </button>
+                                                                                <button
+                                                                                    type="button"
                                                                                     onClick={() => {
-                                                                                        const hasChanges = editOpName.trim() !== op.name || 
-                                                                                                           editOpCategory !== op.category || 
-                                                                                                           editOpKeywords.trim() !== op.keywords.join(', ');
-                                                                                        if (hasChanges) {
+                                                                                        if (hasOpEditChanges(op.id)) {
                                                                                             const confirmCancel = window.confirm('Are you sure you want to discard your unsaved changes?');
                                                                                             if (!confirmCancel) return;
                                                                                         }
                                                                                         setEditOpId(null);
+                                                                                        setEditOpRules([]);
                                                                                     }}
                                                                                     className="p-1 text-gray-400 hover:text-gray-500 transition-colors"
                                                                                     title="Cancel"
                                                                                 >
-                                                                                <X size={14} />
-                                                                            </button>
+                                                                                    <X size={16} />
+                                                                                </button>
+                                                                            </div>
                                                                         </div>
-                                                                    )}
-                                                                </div>
-
-                                                                {isEditingDetails ? (
-                                                                    <div className="space-y-3">
                                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                                             <div>
                                                                                 <label className="text-[9px] font-bold text-gray-450 dark:text-slate-500 block mb-1">Name</label>
@@ -2537,317 +2674,345 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                                                                                     type="text"
                                                                                     value={editOpName}
                                                                                     onChange={e => setEditOpName(e.target.value)}
-                                                                                    className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200"
+                                                                                    className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200"
                                                                                 />
                                                                             </div>
                                                                             <div>
                                                                                 <label className="text-[9px] font-bold text-gray-455 dark:text-slate-500 block mb-1">Category</label>
-                                                                                <select
-                                                                                    value={editOpCategory}
-                                                                                    onChange={e => setEditOpCategory(e.target.value)}
-                                                                                    className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200"
-                                                                                >
-                                                                                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                                                                                </select>
+                                                                                <div className="relative">
+                                                                                    <select
+                                                                                        value={editOpCategory}
+                                                                                        onChange={e => setEditOpCategory(e.target.value)}
+                                                                                        className="w-full appearance-none bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-gray-800 dark:text-slate-200 outline-none focus:ring-1 focus:ring-[#fcb7f0] transition-all"
+                                                                                    >
+                                                                                        {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                                                                    </select>
+                                                                                    <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
+                                                                                </div>
                                                                             </div>
                                                                         </div>
                                                                         <div>
-                                                                            <label className="text-[9px] font-bold text-gray-450 dark:text-slate-500 block mb-1">Trigger Keywords (comma separated)</label>
-                                                                            <input
-                                                                                type="text"
-                                                                                value={editOpKeywords}
-                                                                                onChange={e => setEditOpKeywords(e.target.value)}
-                                                                                className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200"
-                                                                            />
+                                                                            <label className="text-[9px] font-bold text-gray-450 dark:text-slate-500 block mb-1">Trigger Keywords</label>
+                                                                            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                                                                {editOpKeywords.map((kw, idx) => (
+                                                                                    <span 
+                                                                                        key={idx} 
+                                                                                        className="inline-flex items-center gap-1 bg-[#fcb7f0]/35 dark:bg-[#fcb7f0]/15 text-[#8e5a7d] dark:text-[#fcb7f0] border border-[#fcb7f0]/35 text-[10px] font-bold px-2 py-0.5 rounded-full transition-all"
+                                                                                    >
+                                                                                        {kw}
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => handleRemoveKeywordFromEditOp(idx)}
+                                                                                            className="hover:text-red-500 transition-colors"
+                                                                                        >
+                                                                                            <X size={10} />
+                                                                                        </button>
+                                                                                    </span>
+                                                                                ))}
+                                                                                {isAddingEditOpKeyword ? (
+                                                                                    <input
+                                                                                        type="text"
+                                                                                        autoFocus
+                                                                                        value={editOpKeywordInput}
+                                                                                        onChange={e => setEditOpKeywordInput(e.target.value)}
+                                                                                        onKeyDown={e => {
+                                                                                            if (e.key === 'Enter') {
+                                                                                                e.preventDefault();
+                                                                                                if (handleAddKeywordToEditOp(editOpKeywordInput, op.id)) {
+                                                                                                    setIsAddingEditOpKeyword(false);
+                                                                                                }
+                                                                                            } else if (e.key === 'Escape') {
+                                                                                                setIsAddingEditOpKeyword(false);
+                                                                                                setEditOpKeywordInput('');
+                                                                                            }
+                                                                                        }}
+                                                                                        onBlur={() => {
+                                                                                            if (editOpKeywordInput.trim()) {
+                                                                                                handleAddKeywordToEditOp(editOpKeywordInput, op.id);
+                                                                                            }
+                                                                                            setIsAddingEditOpKeyword(false);
+                                                                                        }}
+                                                                                        className="bg-white dark:bg-slate-900 border border-[#fcb7f0] text-xs font-semibold px-2 py-0.5 rounded-full outline-none w-24 text-gray-800 dark:text-slate-200"
+                                                                                        placeholder="Keyword..."
+                                                                                    />
+                                                                                ) : (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => {
+                                                                                            setIsAddingEditOpKeyword(true);
+                                                                                            setEditOpKeywordInput('');
+                                                                                        }}
+                                                                                        className="inline-flex items-center gap-0.5 bg-white hover:bg-[#fcb7f0]/10 dark:bg-slate-900 dark:hover:bg-[#fcb7f0]/5 border border-dashed border-[#fcb7f0]/60 text-[#8e5a7d] dark:text-[#fcb7f0] text-[10px] font-bold px-2 py-0.5 rounded-full transition-all"
+                                                                                    >
+                                                                                        <Plus size={10} strokeWidth={3} /> Add
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
                                                                         </div>
                                                                     </div>
                                                                 ) : (
-                                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                                                                        <div>
-                                                                            <span className="text-gray-400 dark:text-slate-500 font-bold block">Category</span>
-                                                                            <span className="font-semibold text-gray-800 dark:text-slate-200">{op.category}</span>
+                                                                    <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-slate-800/80">
+                                                                        <div className="flex items-center gap-6 text-xs flex-wrap">
+                                                                            <div>
+                                                                                <span className="text-gray-400 dark:text-slate-500 font-bold block mb-0.5 text-[10px]">Name</span>
+                                                                                <span className="font-bold text-gray-900 dark:text-white">{op.name}</span>
+                                                                            </div>
+                                                                            <div>
+                                                                                <span className="text-gray-400 dark:text-slate-500 font-bold block mb-0.5 text-[10px]">Category</span>
+                                                                                <span className="font-bold text-gray-800 dark:text-slate-200">{op.category}</span>
+                                                                            </div>
+                                                                            <div>
+                                                                                <span className="text-gray-400 dark:text-slate-500 font-bold block mb-0.5 text-[10px]">Trigger Keywords</span>
+                                                                                <span className="font-bold text-gray-800 dark:text-slate-200">{op.keywords.join(', ') || '(none)'}</span>
+                                                                            </div>
                                                                         </div>
-                                                                        <div>
-                                                                            <span className="text-gray-400 dark:text-slate-500 font-bold block">Trigger Keywords</span>
-                                                                            <span className="font-semibold text-gray-800 dark:text-slate-200">{op.keywords.join(', ') || '(none)'}</span>
+                                                                        <div className="flex gap-2 shrink-0 pt-0.5">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => !isOffline && handleStartEditOp(op)}
+                                                                                disabled={isOffline}
+                                                                                className="p-1 text-gray-500 hover:text-[#fcb7f0] disabled:opacity-30 disabled:hover:text-gray-500 disabled:cursor-not-allowed transition-colors"
+                                                                                title="Edit details & triggers"
+                                                                            >
+                                                                                <Edit size={14} />
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => !isOffline && handleDeleteOperation(op.id)}
+                                                                                disabled={isOffline}
+                                                                                className="p-1 text-gray-500 hover:text-red-500 disabled:opacity-30 disabled:hover:text-gray-500 disabled:cursor-not-allowed transition-colors"
+                                                                                title="Delete operation"
+                                                                            >
+                                                                                <Trash2 size={14} />
+                                                                            </button>
                                                                         </div>
                                                                     </div>
                                                                 )}
+
+                                                                {/* Bottom Rules Columns */}
+                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                                                                    {/* 1. Surgical Tools Column (Left) */}
+                                                                    <div className="flex flex-col h-full bg-gray-100/70 dark:bg-slate-800/40 border border-gray-200/80 dark:border-slate-700/60 rounded-2xl p-3 sm:p-4">
+                                                                        <div className="flex items-center gap-1.5 mb-3 pb-1 border-b border-gray-100 dark:border-slate-800/80">
+                                                                            <span className="w-1 h-2 bg-sky-400 dark:bg-sky-500 rounded-full"></span>
+                                                                            <span className="text-[9px] font-black uppercase tracking-widest text-sky-700 dark:text-sky-400">Surgical Tools</span>
+                                                                        </div>
+                                                                        
+                                                                        <div className="flex-1 space-y-2 mb-3">
+                                                                            {!isEditingDetails ? (
+                                                                                /* Read-only view */
+                                                                                opRules.filter(r => r.target_type === 'tool').length === 0 ? (
+                                                                                    <div className="py-6 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
+                                                                                        No surgical tools triggered yet.
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    opRules.filter(r => r.target_type === 'tool').map(rule => {
+                                                                                        const tool = config.tools.find(t => t.id === rule.target_id);
+                                                                                        const targetName = tool ? tool.item : rule.target_id;
+                                                                                        return (
+                                                                                            <div 
+                                                                                                key={rule.id} 
+                                                                                                className="bg-white dark:bg-[#111827] border border-gray-100 dark:border-slate-800/60 p-2.5 rounded-xl flex items-center justify-between gap-3 text-xs"
+                                                                                            >
+                                                                                                <div className="flex flex-col">
+                                                                                                    <span className="font-bold text-gray-800 dark:text-slate-200 text-xs">
+                                                                                                        {targetName}
+                                                                                                    </span>
+                                                                                                    {rule.default_selected_value && (
+                                                                                                        <span className="text-[9px] text-gray-450 dark:text-slate-400 font-semibold mt-0.5">
+                                                                                                            Default: {rule.default_selected_value}
+                                                                                                        </span>
+                                                                                                    )}
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        );
+                                                                                    })
+                                                                                )
+                                                                            ) : (
+                                                                                /* Edit Details view */
+                                                                                editOpRules.filter(r => r.target_type === 'tool').length === 0 ? (
+                                                                                    <div className="py-6 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
+                                                                                        No surgical tools queued. Click "+ Add Surgical Tool" below.
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    editOpRules.map((ruleRow, idx) => {
+                                                                                        if (ruleRow.target_type !== 'tool') return null;
+                                                                                        const selectedToolRuleOptions = config.tools.find(t => t.id === ruleRow.target_id)?.options || null;
+                                                                                        return (
+                                                                                            <div key={idx} className="flex gap-2 items-center">
+                                                                                                <div className="relative flex-1">
+                                                                                                    <select
+                                                                                                        value={ruleRow.target_id}
+                                                                                                        onChange={e => {
+                                                                                                            const newId = e.target.value;
+                                                                                                            setEditOpRules(prev => prev.map((item, i) => 
+                                                                                                                i === idx ? { ...item, target_id: newId, default_selected_value: null } : item
+                                                                                                            ));
+                                                                                                        }}
+                                                                                                        className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg pl-2.5 pr-8 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200 appearance-none"
+                                                                                                    >
+                                                                                                        <option value="">- Select Tool -</option>
+                                                                                                        {CATEGORY_ORDER.map(cat => {
+                                                                                                            const catTools = toolRuleOptions.filter(t => t.category === cat);
+                                                                                                            if (catTools.length === 0) return null;
+                                                                                                            return (
+                                                                                                                <optgroup key={cat} label={cat} className="text-gray-500 font-bold bg-white dark:bg-slate-800">
+                                                                                                                    {catTools.map(opt => (
+                                                                                                                        <option key={opt.id} value={opt.id} className="text-gray-900 dark:text-white font-medium">
+                                                                                                                            {opt.name}
+                                                                                                                        </option>
+                                                                                                                    ))}
+                                                                                                                </optgroup>
+                                                                                                            );
+                                                                                                        })}
+                                                                                                    </select>
+                                                                                                    <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                                                                                </div>
+                                                                                                
+                                                                                                {selectedToolRuleOptions && selectedToolRuleOptions.length > 0 && (
+                                                                                                    <div className="relative min-w-[120px]">
+                                                                                                        <select
+                                                                                                            value={ruleRow.default_selected_value || ''}
+                                                                                                            onChange={e => {
+                                                                                                                const newVal = e.target.value;
+                                                                                                                setEditOpRules(prev => prev.map((item, i) => 
+                                                                                                                    i === idx ? { ...item, default_selected_value: newVal || null } : item
+                                                                                                                ));
+                                                                                                            }}
+                                                                                                            className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg pl-2.5 pr-8 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200 appearance-none"
+                                                                                                        >
+                                                                                                            <option value="">- Selection (Opt) -</option>
+                                                                                                            {selectedToolRuleOptions.map((o: any) => (
+                                                                                                                <option key={o.value} value={o.value}>{o.label}</option>
+                                                                                                            ))}
+                                                                                                        </select>
+                                                                                                        <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                                                                                    </div>
+                                                                                                )}
+                                                                                                
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    onClick={() => {
+                                                                                                        setEditOpRules(prev => prev.filter((_, i) => i !== idx));
+                                                                                                    }}
+                                                                                                    className="text-gray-400 hover:text-red-500 p-1 rounded transition-colors shrink-0"
+                                                                                                    title="Remove this tool trigger"
+                                                                                                >
+                                                                                                    <X size={14} />
+                                                                                                </button>
+                                                                                            </div>
+                                                                                        );
+                                                                                    })
+                                                                                )
+                                                                            )}
+                                                                        </div>
+                                                                        
+                                                                        {isEditingDetails && (
+                                                                            <button
+                                                                                type="button"
+                                                                                disabled={isOffline}
+                                                                                onClick={() => {
+                                                                                    setEditOpRules(prev => [...prev, { operation_id: op.id, target_type: 'tool', target_id: '', default_selected_value: null }]);
+                                                                                }}
+                                                                                className="w-full flex items-center justify-center gap-1.5 py-2 bg-white hover:bg-[#fcb7f0]/10 dark:bg-[#111827] dark:hover:bg-[#fcb7f0]/5 border border-dashed border-[#fcb7f0]/60 text-[#8e5a7d] dark:text-[#fcb7f0] text-xs font-bold rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed mt-auto"
+                                                                            >
+                                                                                <Plus size={12} strokeWidth={3} className="text-[#8e5a7d] dark:text-[#fcb7f0]" /> Add Surgical Tool
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                    
+                                                                    {/* 2. Pre-Op Actions Column (Right) */}
+                                                                    <div className="flex flex-col h-full bg-gray-100/70 dark:bg-slate-800/40 border border-gray-200/80 dark:border-slate-700/60 rounded-2xl p-3 sm:p-4">
+                                                                        <div className="flex items-center gap-1.5 mb-3 pb-1 border-b border-gray-100 dark:border-slate-800/80">
+                                                                            <span className="w-1 h-2 bg-indigo-400 dark:bg-indigo-500 rounded-full"></span>
+                                                                            <span className="text-[9px] font-black uppercase tracking-widest text-indigo-700 dark:text-indigo-400">Pre-Op Actions</span>
+                                                                        </div>
+                                                                        
+                                                                        <div className="flex-1 space-y-2 mb-3">
+                                                                            {!isEditingDetails ? (
+                                                                                /* Read-only view */
+                                                                                opRules.filter(r => r.target_type === 'action').length === 0 ? (
+                                                                                    <div className="py-6 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
+                                                                                        No pre-op actions triggered yet.
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    opRules.filter(r => r.target_type === 'action').map(rule => {
+                                                                                        const action = config.actions.find(a => a.id === rule.target_id);
+                                                                                        const targetName = action ? action.item : rule.target_id;
+                                                                                        return (
+                                                                                            <div 
+                                                                                                key={rule.id} 
+                                                                                                className="bg-white dark:bg-[#111827] border border-gray-100 dark:border-slate-800/60 p-2.5 rounded-xl flex items-center justify-between gap-3 text-xs"
+                                                                                            >
+                                                                                                <span className="font-bold text-gray-800 dark:text-slate-200 text-xs">
+                                                                                                    {targetName}
+                                                                                                </span>
+                                                                                            </div>
+                                                                                        );
+                                                                                    })
+                                                                                )
+                                                                            ) : (
+                                                                                /* Edit Details view */
+                                                                                editOpRules.filter(r => r.target_type === 'action').length === 0 ? (
+                                                                                    <div className="py-6 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
+                                                                                        No pre-op actions queued. Click "+ Add Pre-Op Action" below.
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    editOpRules.map((ruleRow, idx) => {
+                                                                                        if (ruleRow.target_type !== 'action') return null;
+                                                                                        return (
+                                                                                            <div key={idx} className="flex gap-2 items-center">
+                                                                                                <div className="relative flex-1">
+                                                                                                    <select
+                                                                                                        value={ruleRow.target_id}
+                                                                                                        onChange={e => {
+                                                                                                            const newId = e.target.value;
+                                                                                                            setEditOpRules(prev => prev.map((item, i) => 
+                                                                                                                i === idx ? { ...item, target_id: newId } : item
+                                                                                                            ));
+                                                                                                        }}
+                                                                                                        className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg pl-2.5 pr-8 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200 appearance-none"
+                                                                                                    >
+                                                                                                        <option value="">- Select Action -</option>
+                                                                                                        {actionRuleOptions.map(opt => (
+                                                                                                            <option key={opt.id} value={opt.id}>{opt.name}</option>
+                                                                                                        ))}
+                                                                                                    </select>
+                                                                                                    <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                                                                                </div>
+                                                                                                
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    onClick={() => {
+                                                                                                        setEditOpRules(prev => prev.filter((_, i) => i !== idx));
+                                                                                                    }}
+                                                                                                    className="text-gray-400 hover:text-red-500 p-1 rounded transition-colors shrink-0"
+                                                                                                    title="Remove this action trigger"
+                                                                                                >
+                                                                                                    <X size={14} />
+                                                                                                </button>
+                                                                                            </div>
+                                                                                        );
+                                                                                    })
+                                                                                )
+                                                                            )}
+                                                                        </div>
+                                                                        
+                                                                        {isEditingDetails && (
+                                                                            <button
+                                                                                type="button"
+                                                                                disabled={isOffline}
+                                                                                onClick={() => {
+                                                                                    setEditOpRules(prev => [...prev, { operation_id: op.id, target_type: 'action', target_id: '', default_selected_value: null }]);
+                                                                                }}
+                                                                                className="w-full flex items-center justify-center gap-1.5 py-2 bg-white hover:bg-[#fcb7f0]/10 dark:bg-[#111827] dark:hover:bg-[#fcb7f0]/5 border border-dashed border-[#fcb7f0]/60 text-[#8e5a7d] dark:text-[#fcb7f0] text-xs font-bold rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed mt-auto"
+                                                                            >
+                                                                                <Plus size={12} strokeWidth={3} className="text-[#8e5a7d] dark:text-[#fcb7f0]" /> Add Pre-Op Action
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
                                                             </div>
-
-                                                             {/* associated rules */}
-                                                             <div className="pt-1">
-                                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                                     {/* 1. Surgical Tools Column (Left) */}
-                                                                     <div className="flex flex-col h-full bg-gray-50/30 dark:bg-slate-800/10 border border-gray-100 dark:border-slate-800/60 rounded-2xl p-3 sm:p-4">
-                                                                         <div className="flex items-center gap-1.5 mb-3 pb-1 border-b border-gray-100 dark:border-slate-800/80">
-                                                                             <span className="w-1 h-2 bg-sky-400 dark:bg-sky-500 rounded-full"></span>
-                                                                             <span className="text-[9px] font-black uppercase tracking-widest text-sky-700 dark:text-sky-400">Surgical Tools</span>
-                                                                         </div>
-                                                                         
-                                                                         <div className="flex-1 space-y-2 mb-3">
-                                                                             {opRules.filter(r => r.target_type === 'tool').length === 0 ? (
-                                                                                 <div className="py-6 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
-                                                                                     No surgical tools triggered yet.
-                                                                                 </div>
-                                                                             ) : (
-                                                                                 opRules.filter(r => r.target_type === 'tool').map(rule => {
-                                                                                     const tool = config.tools.find(t => t.id === rule.target_id);
-                                                                                     const targetName = tool ? tool.item : rule.target_id;
-                                                                                     return (
-                                                                                         <div 
-                                                                                             key={rule.id} 
-                                                                                             className="bg-white dark:bg-[#111827] border border-gray-100 dark:border-slate-800/60 p-2 rounded-xl flex items-center justify-between gap-3 text-xs"
-                                                                                         >
-                                                                                             <div className="flex flex-col">
-                                                                                                 <span className="font-bold text-gray-800 dark:text-slate-200 text-xs">
-                                                                                                     {targetName}
-                                                                                                 </span>
-                                                                                                 {rule.default_selected_value && (
-                                                                                                     <span className="text-[9px] text-gray-450 dark:text-slate-400 font-semibold mt-0.5">
-                                                                                                         Default: {rule.default_selected_value}
-                                                                                                     </span>
-                                                                                                 )}
-                                                                                             </div>
-                                                                                             <button
-                                                                                                 onClick={() => !isOffline && handleDeleteRule(rule.id)}
-                                                                                                 disabled={isOffline}
-                                                                                                 className="text-gray-400 hover:text-red-500 disabled:opacity-30 disabled:hover:text-gray-400 disabled:cursor-not-allowed p-1 rounded transition-colors"
-                                                                                                 title="Remove trigger"
-                                                                                             >
-                                                                                                 <Trash2 size={12} />
-                                                                                             </button>
-                                                                                         </div>
-                                                                                     );
-                                                                                 })
-                                                                             )}
-                                                                         </div>
-                                                                         
-                                                                         {/* Add tool inline row at the last row of the column */}
-                                                                         {isAddingToolRule ? (
-                                                                             <div className="bg-white dark:bg-[#111827] border border-dashed border-gray-200 dark:border-slate-800/80 p-2.5 rounded-xl space-y-2 mt-auto">
-                                                                                 <div className="flex items-center justify-between">
-                                                                                     <span className="text-[8px] font-black uppercase tracking-wider text-gray-400 dark:text-slate-500 block">Add Surgical Tool Trigger</span>
-                                                                                     <button 
-                                                                                         onClick={() => setIsAddingToolRule(false)} 
-                                                                                         className="text-gray-400 hover:text-gray-600 dark:text-slate-550 dark:hover:text-slate-400 transition-colors p-0.5"
-                                                                                     >
-                                                                                         <X size={12} strokeWidth={2.5} />
-                                                                                     </button>
-                                                                                 </div>
-                                                                                 <div className="flex flex-col sm:flex-row gap-2">
-                                                                                     <div className="relative flex-1">
-                                                                                         <select
-                                                                                             value={newToolRuleId}
-                                                                                             onChange={e => {
-                                                                                                 setNewToolRuleId(e.target.value);
-                                                                                                 setNewToolRuleDefaultVal('');
-                                                                                             }}
-                                                                                             className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg pl-2.5 pr-8 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200 appearance-none"
-                                                                                         >
-                                                                                             <option value="">- Select Tool -</option>
-                                                                                             {CATEGORY_ORDER.map(cat => {
-                                                                                                 const catTools = toolRuleOptions.filter(t => t.category === cat);
-                                                                                                 if (catTools.length === 0) return null;
-                                                                                                 return (
-                                                                                                     <optgroup key={cat} label={cat} className="text-gray-500 font-bold bg-white dark:bg-slate-800">
-                                                                                                         {catTools.map(opt => (
-                                                                                                             <option key={opt.id} value={opt.id} className="text-gray-900 dark:text-white font-medium">
-                                                                                                                 {opt.name}
-                                                                                                             </option>
-                                                                                                         ))}
-                                                                                                     </optgroup>
-                                                                                                 );
-                                                                                             })}
-                                                                                         </select>
-                                                                                         <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                                                                                     </div>
-                                                                                     
-                                                                                     {selectedToolRuleOptions && (
-                                                                                         <div className="relative min-w-[120px]">
-                                                                                             <select
-                                                                                                 value={newToolRuleDefaultVal}
-                                                                                                 onChange={e => setNewToolRuleDefaultVal(e.target.value)}
-                                                                                                 className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg pl-2.5 pr-8 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200 appearance-none"
-                                                                                             >
-                                                                                                 <option value="">- Selection (Opt) -</option>
-                                                                                                 {selectedToolRuleOptions.map(o => (
-                                                                                                     <option key={o.value} value={o.value}>{o.label}</option>
-                                                                                                 ))}
-                                                                                             </select>
-                                                                                             <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                                                                                         </div>
-                                                                                     )}
-                                                                                     
-                                                                                     <button
-                                                                                         onClick={() => {
-                                                                                             if (!newToolRuleId) return;
-                                                                                             setPendingToolRules(prev => [...prev, { target_id: newToolRuleId, default_selected_value: newToolRuleDefaultVal || null }]);
-                                                                                             setNewToolRuleId('');
-                                                                                             setNewToolRuleDefaultVal('');
-                                                                                         }}
-                                                                                         disabled={!newToolRuleId}
-                                                                                         className={`px-3 py-1 rounded-lg text-[10px] font-black transition-all border uppercase tracking-wider flex items-center justify-center gap-1 shrink-0 ${
-                                                                                             !newToolRuleId
-                                                                                                 ? 'bg-gray-150 dark:bg-slate-800 text-gray-400 dark:text-slate-600 border-gray-200 dark:border-slate-700 cursor-not-allowed opacity-50'
-                                                                                                 : 'bg-[#fcb7f0]/20 hover:bg-[#fcb7f0]/40 text-[#8e5a7d] dark:text-[#fcb7f0] border-[#fcb7f0]/30'
-                                                                                         }`}
-                                                                                     >
-                                                                                         <Plus size={10} strokeWidth={3} /> Add
-                                                                                     </button>
-                                                                                 </div>
-                                                                             </div>
-                                                                         ) : (
-                                                                             <button
-                                                                                 type="button"
-                                                                                 disabled={isOffline}
-                                                                                 onClick={() => {
-                                                                                     setIsAddingToolRule(true);
-                                                                                     setNewToolRuleId('');
-                                                                                     setNewToolRuleDefaultVal('');
-                                                                                 }}
-                                                                                 className="w-full flex items-center justify-center gap-1.5 py-2 bg-white hover:bg-[#fcb7f0]/10 dark:bg-[#111827] dark:hover:bg-[#fcb7f0]/5 border border-dashed border-[#fcb7f0]/60 text-[#8e5a7d] dark:text-[#fcb7f0] text-xs font-bold rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed mt-auto"
-                                                                             >
-                                                                                 <Plus size={12} strokeWidth={3} className="text-[#8e5a7d] dark:text-[#fcb7f0]" /> Add Surgical Tool
-                                                                             </button>
-                                                                         )}
-                                                                     </div>
-                                                                     
-                                                                     {/* 2. Pre-Op Actions Column (Right) */}
-                                                                     <div className="flex flex-col h-full bg-gray-50/30 dark:bg-slate-800/10 border border-gray-100 dark:border-slate-800/60 rounded-2xl p-3 sm:p-4">
-                                                                         <div className="flex items-center gap-1.5 mb-3 pb-1 border-b border-gray-100 dark:border-slate-800/80">
-                                                                             <span className="w-1 h-2 bg-indigo-400 dark:bg-indigo-500 rounded-full"></span>
-                                                                             <span className="text-[9px] font-black uppercase tracking-widest text-indigo-700 dark:text-indigo-400">Pre-Op Actions</span>
-                                                                         </div>
-                                                                         
-                                                                         <div className="flex-1 space-y-2 mb-3">
-                                                                             {opRules.filter(r => r.target_type === 'action').length === 0 ? (
-                                                                                 <div className="py-6 text-center border border-dashed border-gray-150 dark:border-slate-800/60 rounded-xl text-gray-400 dark:text-slate-500 text-[10px] italic">
-                                                                                     No pre-op actions triggered yet.
-                                                                                 </div>
-                                                                             ) : (
-                                                                                 opRules.filter(r => r.target_type === 'action').map(rule => {
-                                                                                     const action = config.actions.find(a => a.id === rule.target_id);
-                                                                                     const targetName = action ? action.item : rule.target_id;
-                                                                                     return (
-                                                                                         <div 
-                                                                                             key={rule.id} 
-                                                                                             className="bg-white dark:bg-[#111827] border border-gray-100 dark:border-slate-800/60 p-2 rounded-xl flex items-center justify-between gap-3 text-xs"
-                                                                                         >
-                                                                                             <span className="font-bold text-gray-800 dark:text-slate-200 text-xs">
-                                                                                                 {targetName}
-                                                                                             </span>
-                                                                                             <button
-                                                                                                 onClick={() => !isOffline && handleDeleteRule(rule.id)}
-                                                                                                 disabled={isOffline}
-                                                                                                 className="text-gray-400 hover:text-red-500 disabled:opacity-30 disabled:hover:text-gray-400 disabled:cursor-not-allowed p-1 rounded transition-colors"
-                                                                                                 title="Remove trigger"
-                                                                                             >
-                                                                                                 <Trash2 size={12} />
-                                                                                             </button>
-                                                                                         </div>
-                                                                                     );
-                                                                                 })
-                                                                             )}
-                                                                         </div>
-                                                                         
-                                                                         {/* Add action inline row at the last row of the column */}
-                                                                         {isAddingActionRule ? (
-                                                                             <div className="bg-white dark:bg-[#111827] border border-dashed border-gray-200 dark:border-slate-800/80 p-2.5 rounded-xl space-y-2 mt-auto">
-                                                                                 <div className="flex items-center justify-between border-b border-gray-100 dark:border-slate-800 pb-1.5 mb-1.5">
-                                                                                     <span className="text-[8px] font-black uppercase tracking-wider text-gray-400 dark:text-slate-500 block">Add Pre-Op Action Triggers</span>
-                                                                                  <div className="flex items-center justify-center">
-                                                                                         <button
-                                                                                             type="button"
-                                                                                             onClick={() => !isOffline && handleSaveQueuedActionRules(op.id, opRules)}
-                                                                                             disabled={isOffline || pendingActionRules.filter(id => id).length === 0}
-                                                                                             className="text-emerald-500 hover:text-emerald-600 disabled:opacity-30 disabled:hover:text-emerald-500 p-0.5 transition-colors"
-                                                                                             title="Save triggers"
-                                                                                         >
-                                                                                             <Save size={14} />
-                                                                                         </button>
-                                                                                         <button
-                                                                                             type="button"
-                                                                                             onClick={() => {
-                                                                                                 setIsAddingActionRule(false);
-                                                                                                 setPendingActionRules([]);
-                                                                                             }}
-                                                                                             className="text-gray-400 hover:text-gray-600 dark:text-slate-550 dark:hover:text-slate-400 p-0.5 transition-colors"
-                                                                                             title="Exit"
-                                                                                         >
-                                                                                             <X size={14} />
-                                                                                         </button>
-                                                                                     </div>
-                                                                                 </div>
-                                                                                 
-                                                                                 <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-                                                                                     {pendingActionRules.map((actionId, idx) => {
-                                                                                         return (
-                                                                                             <div key={idx} className="flex gap-2 items-center">
-                                                                                                 <div className="relative flex-1">
-                                                                                                     <select
-                                                                                                         value={actionId}
-                                                                                                         onChange={e => {
-                                                                                                             const newId = e.target.value;
-                                                                                                             setPendingActionRules(prev => prev.map((item, i) => 
-                                                                                                                 i === idx ? newId : item
-                                                                                                             ));
-                                                                                                         }}
-                                                                                                         className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg pl-2.5 pr-8 py-1 text-xs font-semibold outline-none focus:ring-1 focus:ring-[#fcb7f0] dark:text-slate-200 appearance-none"
-                                                                                                     >
-                                                                                                         <option value="">- Select Action -</option>
-                                                                                                         {actionRuleOptions.map(opt => (
-                                                                                                             <option key={opt.id} value={opt.id}>{opt.name}</option>
-                                                                                                         ))}
-                                                                                                     </select>
-                                                                                                     <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                                                                                                 </div>
-                                                                                                 
-                                                                                                 {pendingActionRules.length > 1 && (
-                                                                                                     <button
-                                                                                                         type="button"
-                                                                                                         onClick={() => {
-                                                                                                             setPendingActionRules(prev => prev.filter((_, i) => i !== idx));
-                                                                                                         }}
-                                                                                                         className="text-gray-400 hover:text-red-500 p-1 rounded transition-colors shrink-0"
-                                                                                                         title="Remove this action row"
-                                                                                                     >
-                                                                                                         <Trash2 size={12} />
-                                                                                                     </button>
-                                                                                                 )}
-                                                                                             </div>
-                                                                                         );
-                                                                                     })}
-                                                                                 </div>
-
-                                                                                 <div className="pt-1.5 flex justify-start">
-                                                                                     <button
-                                                                                         type="button"
-                                                                                         onClick={() => {
-                                                                                             setPendingActionRules(prev => [...prev, '']);
-                                                                                         }}
-                                                                                         className="flex items-center gap-1 bg-[#fcb7f0]/10 hover:bg-[#fcb7f0]/20 text-[#8e5a7d] dark:text-[#fcb7f0] border border-[#fcb7f0]/20 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-wider transition-all"
-                                                                                     >
-                                                                                         <Plus size={10} strokeWidth={3} className="text-[#8e5a7d] dark:text-[#fcb7f0]" /> Add another action
-                                                                                     </button>
-                                                                                 </div>
-                                                                             </div>
-                                                                         ) : (
-                                                                             <button
-                                                                                 type="button"
-                                                                                 disabled={isOffline}
-                                                                                 onClick={() => {
-                                                                                     setIsAddingActionRule(true);
-                                                                                     setPendingActionRules(['']);
-                                                                                 }}
-                                                                                 className="w-full flex items-center justify-center gap-1.5 py-2 bg-white hover:bg-[#fcb7f0]/10 dark:bg-[#111827] dark:hover:bg-[#fcb7f0]/5 border border-dashed border-[#fcb7f0]/60 text-[#8e5a7d] dark:text-[#fcb7f0] text-xs font-bold rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed mt-auto"
-                                                                             >
-                                                                                 <Plus size={12} strokeWidth={3} className="text-[#8e5a7d] dark:text-[#fcb7f0]" /> Add Pre-Op Action
-                                                                             </button>
-                                                                         )}
-                                                                     </div>
-                                                                 </div>
-                                                             </div>
                                                         </div>
                                                     )}
                                                 </div>
@@ -2866,6 +3031,8 @@ export default function AdminPage({ config, onRefresh, isOffline, onEditingChang
                     </div>
                 </div>
             )}
+
+
 
             {/* loading Indicator Overlay */}
             {loading && (

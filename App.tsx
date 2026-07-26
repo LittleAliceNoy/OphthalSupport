@@ -20,7 +20,8 @@ import {
     Check,
     Syringe,
     Tag,
-    Search
+    Search,
+    WifiOff
 } from 'lucide-react';
 
 import {
@@ -509,15 +510,17 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
                                 key={category} 
                                 className="bg-white dark:bg-[#151f32] rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-5 transition-colors duration-300"
                             >
-                                <div className="flex justify-between items-center -mx-4 sm:-mx-5 -mt-4 sm:-mt-5 mb-4 px-4 sm:px-5 py-3 border-b border-gray-100 dark:border-slate-800 bg-gray-50/40 dark:bg-slate-800/20 rounded-t-2xl">
-                                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8e5a7d] dark:text-pink-400/80 flex items-center gap-2">
-                                        <span className="w-1.5 h-3 bg-[#fcb7f0] rounded-full"></span>
-                                        {(() => {
-                                            if (category.toLowerCase().includes('surgery')) return category;
-                                            if (category === 'Generals') return 'General Surgery';
-                                            return `${category} Surgery`;
-                                        })()}
-                                    </h3>
+                                <div className="flex items-center justify-between mb-3 sm:mb-4 border-b border-gray-50 dark:border-slate-800 pb-2 sm:pb-3">
+                                    <div className="flex items-center gap-2">
+                                        <Tag size={16} className="text-[#8e5a7d] dark:text-brand-primary-dark sm:w-[18px] sm:h-[18px]" strokeWidth={2.5} />
+                                        <h2 className="text-xs sm:text-sm font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide">
+                                            {(() => {
+                                                if (category.toLowerCase().includes('surgery')) return category;
+                                                if (category === 'Generals') return 'General Surgery';
+                                                return `${category} Surgery`;
+                                            })()}
+                                        </h2>
+                                    </div>
                                 </div>
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left text-[11px] sm:text-xs">
@@ -564,11 +567,13 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
 export default function App() {
     const [isDarkMode, setIsDarkMode] = useState(false);
     const [config, setConfig] = useState<{tools: DBTool[], actions: DBAction[], operations: DBOperation[], rules: DBRule[], prices: DBPrice[]} | null>(null);
+    const [isOffline, setIsOffline] = useState(false);
 
     useEffect(() => {
         const load = async () => {
             const data = await fetchConfig();
             setConfig(data);
+            setIsOffline(data.isFallback);
             
             // Initialize session after config loads
             const initialActions: ChecklistItemData[] = data.actions.map(a => ({
@@ -633,6 +638,15 @@ export default function App() {
 
     const [session, setSession] = useState<PatientSession>(initialSession);
     const [currentView, setCurrentView] = useState<'checklist' | 'prices' | 'admin'>('checklist');
+    const [isAdminEditing, setIsAdminEditing] = useState(false);
+
+    const handleViewChange = (view: 'checklist' | 'prices' | 'admin') => {
+        if (currentView === 'admin' && isAdminEditing) {
+            alert('You have unsaved changes in the Admin panel. Please save or cancel your edits first.');
+            return;
+        }
+        setCurrentView(view);
+    };
 
     // Logic implementation using config from Supabase
     const calculateAutoChecklistDB = (currentSession: PatientSession) => {
@@ -911,26 +925,32 @@ export default function App() {
                         </div>
                         <nav className="flex items-center gap-1 flex-wrap">
                             <button 
-                                onClick={() => setCurrentView('checklist')}
+                                onClick={() => handleViewChange('checklist')}
                                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${currentView === 'checklist' ? 'bg-[#fcb7f0] text-slate-800 shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-800'}`}
                             >
                                 Checklist
                             </button>
                             <button 
-                                onClick={() => setCurrentView('prices')}
+                                onClick={() => handleViewChange('prices')}
                                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${currentView === 'prices' ? 'bg-[#fcb7f0] text-slate-800 shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-800'}`}
                             >
                                 Tools & Prices
                             </button>
                             <button 
-                                onClick={() => setCurrentView('admin')}
+                                onClick={() => handleViewChange('admin')}
                                 className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${currentView === 'admin' ? 'bg-[#fcb7f0] text-slate-800 shadow-sm' : 'text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-800'}`}
                             >
                                 <Settings size={13} /> Admin
                             </button>
                         </nav>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-3">
+                        {isOffline && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-slate-700 shadow-sm">
+                                <WifiOff size={10} className="stroke-[2.5]" />
+                                Offline
+                            </span>
+                        )}
                         <button 
                             onClick={toggleTheme} 
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-0 ${isDarkMode ? 'bg-brand-primary dark:bg-brand-primary-dark' : 'bg-gray-200 dark:bg-slate-700'}`}
@@ -952,10 +972,16 @@ export default function App() {
                 {currentView === 'prices' ? (
                     <PriceListPage tools={config.tools} prices={config.prices} />
                 ) : currentView === 'admin' ? (
-                    <AdminPage config={config} onRefresh={async () => {
-                        const data = await fetchConfig();
-                        setConfig(data);
-                    }} />
+                    <AdminPage 
+                        config={config} 
+                        isOffline={isOffline}
+                        onEditingChange={setIsAdminEditing}
+                        onRefresh={async () => {
+                            const data = await fetchConfig();
+                            setConfig(data);
+                            setIsOffline(data.isFallback);
+                        }} 
+                    />
                 ) : (
                     <div className="space-y-4 sm:space-y-6">
                         <div className="space-y-4 sm:space-y-6">
