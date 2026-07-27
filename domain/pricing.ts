@@ -53,6 +53,16 @@ function getDisplayName(
 ): string {
   if (priceRow?.display_name) return priceRow.display_name;
   if (tool.id === 'ctr-no') return 'Capsular tension ring';
+  if (tool.id === 'glaucoma-device' && tool.selectedValue) {
+    const deviceNames: Record<string, string> = {
+      'ahmed-valve': 'Ahmed Glaucoma Valve',
+      'gdi-xen-room': 'XEN glaucoma gel implant',
+      'gfd-express': 'Express GFD',
+      'preserflo-shunt': 'Preserflo Microshunt',
+      'aadi-shunt': 'AADI shunt',
+    };
+    return deviceNames[tool.selectedValue] || tool.item;
+  }
   if (tool.id === 'phaco-machine' && tool.selectedValue) {
     return `${capitalize(tool.selectedValue)} machine`;
   }

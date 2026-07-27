@@ -51,6 +51,11 @@ export interface RuleUpdate {
     default_selected_value: string | null;
 }
 
+export interface ToolPlacementUpdate {
+    id: string;
+    sort_order: number;
+}
+
 function isMissingColumn(error: { message?: string; code?: string } | null | undefined, column: string): boolean {
     return Boolean(error && (error.message?.includes(`column "${column}"`) || error.code === '42703'));
 }
@@ -106,13 +111,44 @@ export async function insertPrice(price: PriceInsert): Promise<{ displayNameSupp
     return { displayNameSupported: false };
 }
 
+export async function createToolWithPrices(tool: ToolInsert, prices: PriceInsert[]): Promise<{ categorySupported: boolean; displayNameSupported: boolean }> {
+    const { data, error } = await supabase.rpc('admin_create_tool_with_prices', {
+        p_tool: tool,
+        p_prices: prices,
+    });
+    if (error) throw error;
+    return {
+        categorySupported: data?.category_supported !== false,
+        displayNameSupported: data?.display_name_supported !== false,
+    };
+}
+
 export async function deleteTool(toolId: string): Promise<void> {
-    const priceResult = await supabase.from('tool_prices').delete().eq('tool_id', toolId);
-    if (priceResult.error) throw priceResult.error;
-    const ruleResult = await supabase.from('operation_rules').delete().eq('target_type', 'tool').eq('target_id', toolId);
-    if (ruleResult.error) throw ruleResult.error;
-    const toolResult = await supabase.from('tools').delete().eq('id', toolId);
-    if (toolResult.error) throw toolResult.error;
+    const { error } = await supabase.rpc('admin_delete_tool', { p_tool_id: toolId });
+    if (error) throw error;
+}
+
+export async function deleteSubtypeAndUpdateTool(priceId: string, toolId: string, options: unknown, type: string, defaultValue: unknown): Promise<void> {
+    const { error } = await supabase.rpc('admin_delete_subtype_and_update_tool', {
+        p_price_id: priceId,
+        p_tool_id: toolId,
+        p_options: options,
+        p_type: type,
+        p_default_value: defaultValue,
+    });
+    if (error) {
+        const message = error.message || 'Unable to delete subtype';
+        throw new Error(`Supabase subtype deletion failed: ${message}`);
+    }
+}
+
+export async function addSubtypeToTool(toolId: string, options: unknown, price: PriceInsert): Promise<void> {
+    const { error } = await supabase.rpc('admin_add_subtype_to_tool', {
+        p_tool_id: toolId,
+        p_options: options,
+        p_price: price,
+    });
+    if (error) throw error;
 }
 
 export async function deletePrice(priceId: string): Promise<void> {
@@ -138,6 +174,16 @@ export async function updateToolOrder(updates: Array<{ id: string; sort_order: n
     if (error) throw error;
 }
 
+export async function updateToolPlacement(toolId: string, category: string | null, updates: ToolPlacementUpdate[]): Promise<{ categorySupported: boolean }> {
+    const { data, error } = await supabase.rpc('admin_update_tool_placement', {
+        p_tool_id: toolId,
+        p_category: category,
+        p_order_updates: updates,
+    });
+    if (error) throw error;
+    return { categorySupported: data?.category_supported !== false };
+}
+
 export async function createOperation(operation: OperationInsert): Promise<void> {
     const result = await supabase.from('operations').insert([operation]);
     if (result.error) throw result.error;
@@ -161,6 +207,28 @@ export async function syncOperationRules(operationId: string, deleteIds: string[
         const result = await supabase.from('operation_rules').update({ target_id: update.target_id, default_selected_value: update.default_selected_value }).eq('id', update.id);
         if (result.error) throw result.error;
     }
+}
+
+export async function updateOperationWithRules(operation: OperationUpdate, deleteIds: string[], inserts: RuleInsert[], updates: RuleUpdate[]): Promise<void> {
+    const { error } = await supabase.rpc('admin_update_operation_with_rules', {
+        p_operation: operation,
+        p_delete_rule_ids: deleteIds,
+        p_insert_rules: inserts,
+        p_update_rules: updates,
+    });
+    if (error) {
+        const message = error.message || 'Unable to update operation';
+        throw new Error(`Supabase operation update failed: ${message}`);
+    }
+}
+
+export async function updateOperationPlacement(operationId: string, category: string | null, updates: Array<{ id: string; sort_order: number }>): Promise<void> {
+    const { error } = await supabase.rpc('admin_update_operation_placement', {
+        p_operation_id: operationId,
+        p_category: category,
+        p_order_updates: updates,
+    });
+    if (error) throw new Error(`Supabase operation placement failed: ${error.message || 'Unable to reorder operation'}`);
 }
 
 export async function deleteOperation(operationId: string): Promise<void> {

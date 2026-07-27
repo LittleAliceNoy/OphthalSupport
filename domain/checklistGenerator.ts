@@ -49,6 +49,7 @@ function applyAnesthesiaRules(actions: ChecklistItemData[], session: PatientSess
   const isOculoOrStrabismus = [
     'oculoplastic', 'strabismus', 'squint', 'ptosis', 'frontalis', 'sling',
     'lid', 'entropion', 'ectropion', 'blepharoplasty', 'edcr', 'dcr',
+    'sclera', 'amnion', 'amnion graft', 'sclera graft',
   ].some(keyword => normalizedText.includes(keyword));
 
   if (!isTxOrGdi && !isOculoOrStrabismus) {
@@ -65,7 +66,9 @@ function applyOperationRules(
   let showMp = false;
 
   for (const operation of config.operations) {
-    if (!operation.keywords.some(keyword => matchesOperationKeyword(keyword, normalizedText))) continue;
+    const operationMatches = matchesOperationKeyword(operation.name, normalizedText)
+      || operation.keywords.some(keyword => matchesOperationKeyword(keyword, normalizedText));
+    if (!operationMatches) continue;
 
     for (const rule of config.rules.filter(rule => rule.operation_id === operation.id)) {
       const list = rule.target_type === 'action' ? actions : tools;

@@ -29,26 +29,19 @@ import {
     PPV_TYPES,
     NEW_REUSED_OPTIONS,
     ChecklistItemData,
-    PatientSession,
 } from './constants';
 import { fetchConfig, DBTool, DBAction, DBOperation, DBRule, DBPrice } from './configService';
 import { calculateCostAndBreakdown } from './domain/pricing';
-import { generateChecklist, normalizeText } from './domain/checklistGenerator';
-import ChecklistSection, { ChecklistField, ChecklistValue } from './components/ChecklistSection';
-import PriceListPage from './components/prices/PriceListPage';
-import { PPV_GAUGES, RETINAL_PROCEDURE_KEYWORDS, clearPpvGaugeSelections, ensureDefaultPpvGauge, formatPpvProcedureDisplay, isPpvProcedureSelected, isRetinalProcedureKeyword, normalizePpvOperationInput, shouldAutoSelectPpv, togglePpvGaugeDiagnosis } from './domain/ppvSelection';
+import ChecklistSection from './components/ChecklistSection';
+import { formatPpvProcedureDisplay } from './domain/ppvSelection';
+import { useChecklistSession } from './hooks/useChecklistSession';
+import { useProcedureSelection } from './hooks/useProcedureSelection';
+import { getOperationCategory, OPERATION_CATEGORY_ORDER } from './toolCatalog';
 
 const AdminPage = lazy(() => import('./AdminPage'));
+const PriceListPage = lazy(() => import('./components/prices/PriceListPage'));
 
 // --- Utility Functions ---
-function generateUUID() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-        const r = (Math.random() * 16) | 0;
-        const v = c === 'x' ? r : (r & 0x3) | 0x8;
-        return v.toString(16);
-    });
-}
-
 function getSurgeonGroup(name: string) {
     if (!name) return '';
     for (const [group, names] of Object.entries(SURGEON_GROUPS)) {
@@ -71,38 +64,8 @@ export default function App() {
     const [isDarkMode, setIsDarkMode] = useState(false);
     const [config, setConfig] = useState<{tools: DBTool[], actions: DBAction[], operations: DBOperation[], rules: DBRule[], prices: DBPrice[]} | null>(null);
     const [isOffline, setIsOffline] = useState(false);
-    const [ppvUserDismissed, setPpvUserDismissed] = useState(false);
-
     useEffect(() => {
-        const load = async () => {
-            const data = await fetchConfig();
-            setConfig(data);
-            setIsOffline(data.isFallback);
-            
-            // Initialize session after config loads
-            const initialActions: ChecklistItemData[] = data.actions.map(a => ({
-                id: a.id, item: a.item, type: 'checkbox', checked: false
-            }));
-            const initialTools: ChecklistItemData[] = data.tools.map(t => {
-                const isCtr = t.id === 'ctr-no';
-                return {
-                    id: t.id,
-                    item: isCtr ? 'CTR No.' : t.item,
-                    type: (isCtr ? 'number-input' : t.type) as ChecklistItemData['type'],
-                    options: t.options,
-                    checked: false, 
-                    selectedValue: t.type === 'radio' ? t.default_value : null,
-                    value: isCtr ? '' : (t.type === 'number-input' ? (Array.isArray(t.default_value) ? t.default_value : ['', '']) : '')
-                };
-            });
-
-            setSession(prev => ({
-                ...prev,
-                actions: initialActions,
-                tools: initialTools
-            }));
-        };
-        load();
+        fetchConfig().then(data => { setConfig(data); setIsOffline(data.isFallback); });
     }, []);
 
     useEffect(() => {
@@ -119,28 +82,19 @@ export default function App() {
     
     const groupedOperations = useMemo(() => {
         if (!config) return {} as Record<string, DBOperation[]>;
-        const groups: Record<string, DBOperation[]> = {};
+        const groups: Record<string, DBOperation[]> = Object.fromEntries(OPERATION_CATEGORY_ORDER.map(category => [category, []]));
         config.operations.forEach(op => {
-            if (!groups[op.category]) groups[op.category] = [];
-            groups[op.category].push(op);
+            const category = getOperationCategory(op.category, op.name);
+            groups[category].push(op);
         });
-        return groups;
+        Object.values(groups).forEach(operations => {
+            operations.sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999));
+        });
+        return Object.fromEntries(Object.entries(groups).filter(([, operations]) => operations.length > 0));
     }, [config]);
     
-    const initialSession: PatientSession = {
-        id: generateUUID(),
-        diagnosis: '',
-        operationInput: '',
-        surgeonName: '',
-        anesthesiaType: ANESTHESIA_TYPES.LA,
-        healthCoverage: COVERAGE_TYPES.UCS,
-        actions: [],
-        tools: [],
-        mpSelectedTypes: [],
-        updatedAt: new Date()
-    };
-
-    const [session, setSession] = useState<PatientSession>(initialSession);
+    const { session, setSession, updateSession, updateChecklist, resetCaseBasics, resetProcedure, setPpvUserDismissed } = useChecklistSession(config);
+    const { toggleProcedureKeyword, toggleDiagnosisKeyword, isMpSelected, isGdiSelected, isPpvSelected } = useProcedureSelection({ session, setSession, setPpvUserDismissed });
     const [currentView, setCurrentView] = useState<'checklist' | 'prices' | 'admin'>('checklist');
     const [isAdminEditing, setIsAdminEditing] = useState(false);
 
@@ -152,144 +106,6 @@ export default function App() {
         setCurrentView(view);
     };
 
-    const calculateAutoChecklistDB = (currentSession: PatientSession) => {
-        if (!config) {
-            return {
-                actions: currentSession.actions,
-                tools: currentSession.tools,
-                mpSelectedTypes: currentSession.mpSelectedTypes,
-            };
-        }
-        return generateChecklist(currentSession, config);
-    };
-
-    // Auto update checklist whenever relevant fields change
-    useEffect(() => {
-        if (!config) return;
-
-        // NEW: If any retinal procedure is selected, ensure PPV is also selected
-        const normalizedInput = normalizeText(session.operationInput);
-        const hasRetinalProc = RETINAL_PROCEDURE_KEYWORDS.some(k => normalizedInput.includes(k));
-        const hasPpvProc = /\bppv\b/i.test(normalizedInput) || normalizedInput.includes('vitrectomy');
-
-        if (shouldAutoSelectPpv(hasRetinalProc, hasPpvProc, ppvUserDismissed)) {
-            const currentProc = session.operationInput.trim();
-            const updatedProc = currentProc ? `${currentProc} + PPV` : 'PPV';
-            setSession(prev => ({
-                ...prev,
-                operationInput: updatedProc,
-                diagnosis: ensureDefaultPpvGauge(prev.diagnosis),
-                updatedAt: new Date(),
-            }));
-            return;
-        }
-
-        if (hasPpvProc && !PPV_GAUGES.some(gauge => session.diagnosis.split(',').map(value => value.trim()).includes(gauge))) {
-            setSession(prev => ({ ...prev, diagnosis: ensureDefaultPpvGauge(prev.diagnosis), updatedAt: new Date() }));
-            return;
-        }
-
-        const result = calculateAutoChecklistDB(session);
-        setSession(prev => ({ ...prev, actions: result.actions, tools: result.tools, mpSelectedTypes: result.mpSelectedTypes }));
-    }, [session.operationInput, session.diagnosis, session.anesthesiaType, session.surgeonName, config, ppvUserDismissed]);
-
-    const updateSession = <K extends keyof PatientSession>(key: K, value: PatientSession[K]) => {
-        setSession(prev => ({ ...prev, [key]: value, updatedAt: new Date() }));
-    };
-
-    const updateChecklist = (listName: 'actions' | 'tools', itemId: string, key: ChecklistField, value: ChecklistValue) => {
-        setSession(prev => ({
-            ...prev,
-            [listName]: (prev[listName] as ChecklistItemData[]).map(i => i.id === itemId ? { ...i, [key]: value } : i),
-            updatedAt: new Date()
-        }));
-    };
-
-    const toggleProcedureKeyword = (keyword: string) => {
-        const normalizedInput = keyword.toUpperCase() === 'PPV'
-            ? normalizePpvOperationInput(session.operationInput.trim())
-            : session.operationInput.trim();
-        const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp('(^|\\+)\\s*' + escapedKeyword + '\\s*($|\\+)', 'i');
-        const isSelected = keyword.toUpperCase() === 'PPV'
-            ? isPpvProcedureSelected(normalizedInput)
-            : regex.test(normalizedInput);
-        
-        if (isSelected) {
-            let newValue = normalizedInput.replace(regex, (match, p1, p2) => {
-                if (p1 === '+' && p2 === '+') return '+';
-                return '';
-            }).trim();
-            newValue = newValue.replace(/^\s*\+\s*|\s*\+\s*$/g, '');
-            setSession(prev => ({
-                ...prev,
-                operationInput: newValue,
-                diagnosis: keyword.toUpperCase() === 'PPV'
-                    ? clearPpvGaugeSelections(prev.diagnosis)
-                    : prev.diagnosis,
-                updatedAt: new Date(),
-            }));
-            if (keyword.toUpperCase() === 'PPV') setPpvUserDismissed(true);
-
-            if (keyword.toUpperCase() === 'MP') {
-                const currentDiags = session.diagnosis.split(',').map(s => s.trim()).filter(Boolean);
-                const filteredDiags = currentDiags.filter(d => !['MH', 'RRD', 'TRD', 'ERM'].includes(d));
-                updateSession('diagnosis', filteredDiags.join(', '));
-            }
-            if (keyword.toUpperCase() === 'GDI') {
-                const currentDiags = session.diagnosis.split(',').map(s => s.trim()).filter(Boolean);
-                const filteredDiags = currentDiags.filter(d => !['Ahmed', 'XEN', 'Express GFD', 'Preserflo', 'AADI'].includes(d));
-                updateSession('diagnosis', filteredDiags.join(', '));
-            }
-        } else {
-            const newValue = normalizedInput ? `${normalizedInput} + ${keyword}` : keyword;
-            setSession(prev => ({
-                ...prev,
-                operationInput: newValue,
-                diagnosis: keyword.toUpperCase() === 'PPV'
-                    ? ensureDefaultPpvGauge(prev.diagnosis)
-                    : prev.diagnosis,
-                updatedAt: new Date(),
-            }));
-            if (keyword.toUpperCase() !== 'PPV' && isRetinalProcedureKeyword(keyword)) {
-                setPpvUserDismissed(false);
-            }
-            if (keyword.toUpperCase() === 'PPV') setPpvUserDismissed(false);
-        }
-    };
-
-    const toggleDiagnosisKeyword = (keyword: string, exclusiveGroup?: string[]) => {
-        let currentVals = session.diagnosis.split(',').map(s => s.trim()).filter(Boolean);
-        const currentOpInput = session.operationInput.trim();
-
-        // 23G and 25G are PPV subtypes, never separate procedures.
-        if (PPV_GAUGES.includes(keyword as typeof PPV_GAUGES[number])) {
-            const nextDiagnosis = togglePpvGaugeDiagnosis(session.diagnosis, keyword, currentOpInput);
-            if (nextDiagnosis === session.diagnosis) return;
-            setSession(prev => ({
-                ...prev,
-                diagnosis: nextDiagnosis,
-                updatedAt: new Date(),
-            }));
-            return;
-        }
-
-        if (currentVals.includes(keyword)) {
-            currentVals = currentVals.filter(value => value !== keyword);
-        } else {
-            if (exclusiveGroup) {
-                currentVals = currentVals.filter(value => !exclusiveGroup.includes(value));
-            }
-            currentVals.push(keyword);
-        }
-
-        setSession(prev => ({
-            ...prev,
-            diagnosis: currentVals.join(', '),
-            operationInput: currentOpInput,
-            updatedAt: new Date(),
-        }));
-    };
     const { total, breakdown } = useMemo(() => {
         if (!config) return { total: 0, breakdown: [] };
         return calculateCostAndBreakdown(session.tools, session.healthCoverage, session, config.prices);
@@ -297,21 +113,6 @@ export default function App() {
 
     const activeSurgeonGroup = getSurgeonGroup(session.surgeonName);
     const isMissingRequired = session.operationInput.trim() === '';
-
-    const resetCaseBasics = () => {
-        setSession(prev => ({
-            ...prev,
-            surgeonName: initialSession.surgeonName,
-            anesthesiaType: initialSession.anesthesiaType,
-            healthCoverage: initialSession.healthCoverage
-        }));
-    };
-
-    const isMpSelected = useMemo(() => session.operationInput.split('+').map(s => s.trim()).includes("MP"), [session.operationInput]);
-    const isGdiSelected = useMemo(() => session.operationInput.split('+').map(s => s.trim()).includes("GDI"), [session.operationInput]);
-    const isPpvSelected = useMemo(() => {
-        return isPpvProcedureSelected(session.operationInput);
-    }, [session.operationInput]);
 
     if (!config) return <div className="min-h-screen flex items-center justify-center dark:bg-brand-neutral-dark text-slate-500">Loading Configuration...</div>;
 
@@ -371,7 +172,9 @@ export default function App() {
 
             <main className="max-w-3xl mx-auto px-3 py-3 sm:px-4 sm:py-6">
                 {currentView === 'prices' ? (
-                    <PriceListPage tools={config.tools} prices={config.prices} />
+                    <Suspense fallback={<div className="p-8 text-center text-xs text-gray-400">Loading price list…</div>}>
+                        <PriceListPage tools={config.tools} prices={config.prices} />
+                    </Suspense>
                 ) : currentView === 'admin' ? (
                     <Suspense fallback={<div className="p-8 text-center text-xs text-gray-400">Loading admin tools…</div>}>
                         <AdminPage
@@ -456,10 +259,7 @@ export default function App() {
                                         <h2 className="text-xs sm:text-sm font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide">Procedure</h2>
                                     </div>
                                     <button onClick={() => {
-                                        setPpvUserDismissed(false);
-                                        updateSession('operationInput', '');
-                                        updateSession('diagnosis', '');
-                                        updateSession('mpSelectedTypes', []);
+                                        resetProcedure();
                                     }} className="flex items-center gap-1 text-[9px] sm:text-[10px] uppercase font-bold text-gray-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 bg-gray-100 dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-900/30 px-2 py-1 flex-shrink-0 rounded transition-colors">
                                         <RefreshCw size={10} className="sm:w-[12px] sm:h-[12px]" /> Reset
                                     </button>

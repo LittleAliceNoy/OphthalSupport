@@ -29,6 +29,7 @@ export interface DBOperation {
   name: string;
   category: string;
   keywords: string[];
+  sort_order?: number;
 }
 
 export interface DBRule {

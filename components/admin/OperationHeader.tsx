@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronDown, ChevronUp, Edit, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Menu } from 'lucide-react';
 import { DBOperation } from '../../configService';
 
 interface OperationHeaderProps {
@@ -10,12 +10,18 @@ interface OperationHeaderProps {
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  canReorder?: boolean;
+  onDragStart?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDragOver?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDrop?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDragEnd?: () => void;
 }
 
-export default function OperationHeader({ operation, ruleCount, expanded, disabled, onToggle, onEdit, onDelete }: OperationHeaderProps) {
+export default function OperationHeader({ operation, ruleCount, expanded, disabled, onToggle, onEdit, onDelete, canReorder = false, onDragStart, onDragOver, onDrop, onDragEnd }: OperationHeaderProps) {
   return (
-    <div onClick={onToggle} className="p-3 sm:p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50/50 dark:hover:bg-slate-800/20 transition-colors">
+    <div onClick={onToggle} draggable={canReorder && !disabled} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} className="p-3 sm:p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50/50 dark:hover:bg-slate-800/20 transition-colors">
       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+        {canReorder && <Menu size={14} className="text-gray-400 cursor-grab active:cursor-grabbing shrink-0" title="Drag to reorder operation" />}
         <span className="text-xs sm:text-sm font-bold text-gray-900 dark:text-white">{operation.name}</span>
         <div className="flex flex-wrap gap-1">
           {operation.keywords.map(keyword => (
@@ -27,12 +33,6 @@ export default function OperationHeader({ operation, ruleCount, expanded, disabl
         <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400 dark:text-slate-500 bg-gray-50 dark:bg-slate-900 border border-gray-100 dark:border-slate-800 px-1.5 py-0.5 rounded">
           {ruleCount} rule{ruleCount !== 1 ? 's' : ''}
         </span>
-        <button type="button" onClick={event => { event.stopPropagation(); if (!disabled) onEdit(); }} disabled={disabled} className="p-1 text-gray-500 hover:text-[#fcb7f0] disabled:opacity-30 transition-colors" title="Edit details & triggers">
-          <Edit size={14} />
-        </button>
-        <button type="button" onClick={event => { event.stopPropagation(); if (!disabled) onDelete(); }} disabled={disabled} className="p-1 text-gray-500 hover:text-red-500 disabled:opacity-30 transition-colors" title="Delete operation">
-          <Trash2 size={14} />
-        </button>
         {expanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
       </div>
     </div>

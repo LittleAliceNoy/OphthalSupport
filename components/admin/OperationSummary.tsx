@@ -13,7 +13,7 @@ export default function OperationSummary({ operation, disabled, onEdit, onDelete
     return (
         <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-slate-800/80">
             <div className="flex items-center gap-6 text-xs flex-wrap">
-                <div>
+            <div>
                     <span className="text-gray-400 dark:text-slate-500 font-bold block mb-0.5 text-[10px]">Name</span>
                     <span className="font-bold text-gray-900 dark:text-white">{operation.name}</span>
                 </div>
@@ -27,22 +27,10 @@ export default function OperationSummary({ operation, disabled, onEdit, onDelete
                 </div>
             </div>
             <div className="flex gap-2 shrink-0 pt-0.5">
-                <button
-                    type="button"
-                    onClick={onEdit}
-                    disabled={disabled}
-                    className="p-1 text-gray-500 hover:text-[#fcb7f0] disabled:opacity-30 disabled:hover:text-gray-500 disabled:cursor-not-allowed transition-colors"
-                    title="Edit details & triggers"
-                >
+                <button type="button" onClick={onEdit} disabled={disabled} className="p-1 text-gray-500 hover:text-[#fcb7f0] disabled:opacity-30 transition-colors" title="Edit details & triggers">
                     <Edit size={14} />
                 </button>
-                <button
-                    type="button"
-                    onClick={onDelete}
-                    disabled={disabled}
-                    className="p-1 text-gray-500 hover:text-red-500 disabled:opacity-30 disabled:hover:text-gray-500 disabled:cursor-not-allowed transition-colors"
-                    title="Delete operation"
-                >
+                <button type="button" onClick={onDelete} disabled={disabled} className="p-1 text-gray-500 hover:text-red-500 disabled:opacity-30 transition-colors" title="Delete operation">
                     <Trash2 size={14} />
                 </button>
             </div>

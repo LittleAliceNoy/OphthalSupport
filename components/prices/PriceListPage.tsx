@@ -1,62 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { Search, Tag } from 'lucide-react';
 import { DBPrice, DBTool } from '../../configService';
-
+import { CATEGORY_LABELS, CATEGORY_ORDER, TOOL_CATEGORIES, TOOL_ORDER, getToolDisplayName } from '../../toolCatalog';
 const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<'All' | string>('All');
 
-    const TOOL_CATEGORIES: Record<string, string> = {
-        '15-degree-blade': 'Generals',
-        'slit-knife': 'Generals',
-        'crescent-knife': 'Generals',
-        'phaco-machine': 'Lens Surgery',
-        'zeiss-quattro': 'Lens Surgery',
-        'basic-phaco-pack': 'Lens Surgery',
-        'ctr-no': 'Lens Surgery',
-        'cts': 'Lens Surgery',
-        'iris-retractor': 'Lens Surgery',
-        'ppv-set': 'Retinal Surgery',
-        'bbg': 'Retinal Surgery',
-        'ilm-forceps': 'Retinal Surgery',
-        'micro-scissor': 'Retinal Surgery',
-        'silicone-oil': 'Retinal Surgery',
-        'silicone-oil-hd': 'Retinal Surgery',
-        'endolaser': 'Retinal Surgery',
-        'dk-line': 'Retinal Surgery',
-        'soft-tip': 'Retinal Surgery',
-        'glaucoma-device': 'Glaucoma',
-        'punch-trephine': 'Cornea',
-        '5fu': 'Generals',
-        'fibrin-glue': 'Generals',
-    };
-
     const categorizedTools = useMemo(() => {
-        const TOOL_ORDER = [
-            'phaco-machine',
-            'zeiss-quattro',
-            'basic-phaco-pack',
-            'ctr-no',
-            'cts',
-            'iris-retractor',
-            'ppv-set',
-            'bbg',
-            'ilm-forceps',
-            'micro-scissor',
-            'silicone-oil',
-            'silicone-oil-hd',
-            'endolaser',
-            'dk-line',
-            'soft-tip',
-            'glaucoma-device',
-            'punch-trephine',
-            '15-degree-blade',
-            'slit-knife',
-            'crescent-knife',
-            '5fu',
-            'fibrin-glue'
-        ];
-
         const sortedTools = [...tools].sort((a, b) => {
             const orderA = typeof a.sort_order === 'number' ? a.sort_order : 0;
             const orderB = typeof b.sort_order === 'number' ? b.sort_order : 0;
@@ -74,7 +24,7 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
         
         sortedTools.forEach(tool => {
             let category = tool.category || TOOL_CATEGORIES[tool.id] || 'Generals';
-            if (!['Lens Surgery', 'Retinal Surgery', 'Glaucoma', 'Cornea', 'Generals'].includes(category)) {
+            if (!CATEGORY_ORDER.includes(category)) {
                 category = 'Generals';
             }
             if (!groups[category]) groups[category] = [];
@@ -135,29 +85,8 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
         return groups;
     }, [tools, prices]);
 
-    const getRowDisplayName = (tool: DBTool, price: DBPrice): string => {
-        const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
-
-        if (price.display_name) return price.display_name;
-        if (tool.id === 'ctr-no') return 'Capsular Tension Ring';
-        if (tool.id === 'cts') return 'Capsular Tension Segment';
-        if (tool.id === 'glaucoma-device' && price.sub_key) {
-            if (price.sub_key === 'gdi-xen-room') return 'XEN glaucoma gel implant';
-            if (price.sub_key === 'aadi-shunt') return 'AADI shunt';
-            if (price.sub_key === 'gfd-express') return 'Express GFD';
-            return capitalize(price.sub_key.replace(/-/g, ' '));
-        }
-        if (tool.id === 'phaco-machine' && price.sub_key) {
-            return `${capitalize(price.sub_key)} phaco machine`;
-        }
-        if (tool.id === 'ppv-set' && price.sub_key) {
-            const parts = price.sub_key.split('_');
-            const machine = parts.length > 1 ? parts[1] : parts[0];
-            return `23G/25G ${capitalize(machine)}`;
-        }
-        if (tool.id === 'soft-tip') return 'Soft tip';
-        return tool.item;
-    };
+    const getRowDisplayName = (tool: DBTool, price: DBPrice): string =>
+        price.display_name || getToolDisplayName(tool.id, tool.item, price.sub_key);
 
     const filteredGroups = useMemo(() => {
         const result: Record<string, { tool: DBTool, price: DBPrice }[]> = {};
@@ -187,7 +116,7 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
         return result;
     }, [categorizedTools, searchTerm, selectedCategory]);
 
-    const categories = ['Lens Surgery', 'Retinal Surgery', 'Glaucoma', 'Cornea', 'Generals'];
+    const categories = CATEGORY_ORDER;
 
     return (
         <div className="space-y-4">
@@ -197,15 +126,7 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
                 <div className="flex flex-row flex-nowrap overflow-x-auto no-scrollbar gap-1 max-w-full select-none py-0.5 shrink-0">
                     {['All', ...categories].map(cat => {
                         const isSelected = selectedCategory === cat;
-                        const labelMap: Record<string, string> = {
-                            'All': 'All',
-                            'Lens Surgery': 'Lens',
-                            'Retinal Surgery': 'Retina',
-                            'Glaucoma': 'Glaucoma',
-                            'Cornea': 'Cornea',
-                            'Generals': 'Generals',
-                        };
-                        const displayLabel = labelMap[cat] || cat;
+                        const displayLabel = CATEGORY_LABELS[cat] || cat;
                         return (
                             <button
                                 key={cat}

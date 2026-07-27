@@ -31,5 +31,47 @@ export const CANONICAL_TOOL_CATALOG: ToolCatalogEntry[] = [
 ];
 
 export const CATEGORY_ORDER = ['Lens Surgery', 'Retinal Surgery', 'Glaucoma', 'Cornea', 'Generals'];
+export const CATEGORY_LABELS: Record<string, string> = {
+    All: 'All',
+    'Lens Surgery': 'Lens',
+    'Retinal Surgery': 'Retina',
+    Glaucoma: 'Glaucoma',
+    Cornea: 'Cornea',
+    Generals: 'Generals',
+};
+export const OPERATION_CATEGORY_ORDER = ['Lens Surgery', 'Retinal Surgery', 'Glaucoma', 'Cornea', 'Oculoplastics and Strabismus', 'Others'];
+export function getOperationCategory(category: string, operationName = ''): string {
+    const normalized = category.trim().toLowerCase();
+    const normalizedName = operationName.trim().toLowerCase();
+    if (normalizedName.includes('aspiration')) {
+        return 'Others';
+    }
+    if (normalized === 'oculoplastics' || normalized === 'oculoplastic' || normalized === 'strabismus' || normalized === 'oculoplastics and strabismus') {
+        return 'Oculoplastics and Strabismus';
+    }
+    return OPERATION_CATEGORY_ORDER.includes(category.trim()) ? category.trim() : 'Others';
+}
 export const TOOL_ORDER = CANONICAL_TOOL_CATALOG.map(tool => tool.id);
 export const TOOL_CATEGORIES = Object.fromEntries(CANONICAL_TOOL_CATALOG.map(tool => [tool.id, tool.category]));
+
+function capitalize(value: string): string {
+    return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+}
+
+export function getToolDisplayName(toolId: string, itemText: string, subKey: string | null): string {
+    if (toolId === 'ctr-no') return 'Capsular Tension Ring';
+    if (toolId === 'cts') return 'Capsular Tension Segment';
+    if (toolId === 'glaucoma-device' && subKey) {
+        if (subKey === 'gdi-xen-room') return 'XEN glaucoma gel implant';
+        if (subKey === 'aadi-shunt') return 'AADI shunt';
+        if (subKey === 'gfd-express') return 'Express GFD';
+        return capitalize(subKey.replace(/-/g, ' '));
+    }
+    if (toolId === 'phaco-machine' && subKey) return `${capitalize(subKey)} phaco machine`;
+    if (toolId === 'ppv-set' && subKey) {
+        const parts = subKey.split('_');
+        return `23G/25G ${capitalize(parts.length > 1 ? parts[1] : parts[0])}`;
+    }
+    if (toolId === 'soft-tip') return 'Soft tip';
+    return itemText || toolId;
+}

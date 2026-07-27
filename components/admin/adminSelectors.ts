@@ -1,5 +1,6 @@
 import { DBOperation, DBPrice, DBTool } from '../../configService';
 import { CATEGORY_ORDER, TOOL_CATEGORIES, TOOL_ORDER, getToolDisplayName } from './adminCatalog';
+import { getOperationCategory } from '../../toolCatalog';
 
 export function filterAndSortPrices(prices: DBPrice[], tools: DBTool[], searchTerm: string): DBPrice[] {
   const search = searchTerm.toLowerCase();
@@ -53,7 +54,8 @@ export function groupOperations(operations: DBOperation[], categories: string[])
   const groups: Record<string, DBOperation[]> = {};
   categories.forEach(category => { groups[category] = []; });
   operations.forEach(operation => {
-    const category = categories.includes(operation.category) ? operation.category : 'Others';
+    const normalizedCategory = getOperationCategory(operation.category, operation.name);
+    const category = categories.includes(normalizedCategory) ? normalizedCategory : 'Others';
     groups[category].push(operation);
   });
   return groups;
