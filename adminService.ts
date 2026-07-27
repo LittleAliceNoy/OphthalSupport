@@ -118,8 +118,8 @@ export async function createToolWithPrices(tool: ToolInsert, prices: PriceInsert
     });
     if (error) throw error;
     return {
-        categorySupported: data?.category_supported !== false,
-        displayNameSupported: data?.display_name_supported !== false,
+        categorySupported: data?.category_supported === true,
+        displayNameSupported: data?.display_name_supported === true,
     };
 }
 
@@ -181,7 +181,7 @@ export async function updateToolPlacement(toolId: string, category: string | nul
         p_order_updates: updates,
     });
     if (error) throw error;
-    return { categorySupported: data?.category_supported !== false };
+    return { categorySupported: data?.category_supported === true };
 }
 
 export async function createOperation(operation: OperationInsert): Promise<void> {
