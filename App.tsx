@@ -2,7 +2,6 @@ import React, { lazy, Suspense, useState, useEffect, useMemo } from 'react';
 import {
     Activity,
     Asterisk,
-    Calculator,
     CheckCircle,
     CheckSquare,
     ChevronDown,
@@ -24,27 +23,29 @@ import {
     ANESTHESIA_TYPES,
     COVERAGE_TYPES,
     SURGEON_GROUPS,
+    getSurgeonGroups,
     MP_TYPES,
     GDI_TYPES,
     PPV_TYPES,
-    NEW_REUSED_OPTIONS,
     ChecklistItemData,
 } from './constants';
 import { fetchConfig, DBTool, DBAction, DBOperation, DBRule, DBPrice } from './configService';
 import { calculateCostAndBreakdown } from './domain/pricing';
 import ChecklistSection from './components/ChecklistSection';
+import CostSummary from './components/CostSummary';
 import { formatPpvProcedureDisplay } from './domain/ppvSelection';
 import { useChecklistSession } from './hooks/useChecklistSession';
 import { useProcedureSelection } from './hooks/useProcedureSelection';
 import { getOperationCategory, OPERATION_CATEGORY_ORDER } from './toolCatalog';
+import type { SurgeonGroups } from './domain/toolTypes';
 
 const AdminPage = lazy(() => import('./AdminPage'));
 const PriceListPage = lazy(() => import('./components/prices/PriceListPage'));
 
 // --- Utility Functions ---
-function getSurgeonGroup(name: string) {
+function getSurgeonGroup(name: string, groups: SurgeonGroups) {
     if (!name) return '';
-    for (const [group, names] of Object.entries(SURGEON_GROUPS)) {
+    for (const [group, names] of Object.entries(groups)) {
         if (names.some(n => name.includes(n))) return group;
     }
     return '';
@@ -64,8 +65,20 @@ export default function App() {
     const [isDarkMode, setIsDarkMode] = useState(false);
     const [config, setConfig] = useState<{tools: DBTool[], actions: DBAction[], operations: DBOperation[], rules: DBRule[], prices: DBPrice[]} | null>(null);
     const [isOffline, setIsOffline] = useState(false);
+    const [surgeonGroups, setSurgeonGroupsState] = useState(getSurgeonGroups);
+
     useEffect(() => {
         fetchConfig().then(data => { setConfig(data); setIsOffline(data.isFallback); });
+    }, []);
+
+    useEffect(() => {
+        const handleUpdate = () => setSurgeonGroupsState(getSurgeonGroups());
+        window.addEventListener('surgeonGroupsUpdated', handleUpdate);
+        window.addEventListener('storage', handleUpdate);
+        return () => {
+            window.removeEventListener('surgeonGroupsUpdated', handleUpdate);
+            window.removeEventListener('storage', handleUpdate);
+        };
     }, []);
 
     useEffect(() => {
@@ -78,7 +91,7 @@ export default function App() {
 
     const toggleTheme = () => setIsDarkMode(!isDarkMode);
 
-    const allSurgeonNames = useMemo(() => Object.values(SURGEON_GROUPS).flat().sort(), []);
+    const allSurgeonNames = useMemo(() => Object.values(surgeonGroups).flat().sort(), [surgeonGroups]);
     
     const groupedOperations = useMemo(() => {
         if (!config) return {} as Record<string, DBOperation[]>;
@@ -111,7 +124,7 @@ export default function App() {
         return calculateCostAndBreakdown(session.tools, session.healthCoverage, session, config.prices);
     }, [session.tools, session.healthCoverage, session.diagnosis, config]);
 
-    const activeSurgeonGroup = getSurgeonGroup(session.surgeonName);
+    const activeSurgeonGroup = getSurgeonGroup(session.surgeonName, surgeonGroups);
     const isMissingRequired = session.operationInput.trim() === '';
 
     if (!config) return <div className="min-h-screen flex items-center justify-center dark:bg-brand-neutral-dark text-slate-500">Loading Configuration...</div>;
@@ -390,48 +403,12 @@ export default function App() {
                             </section>
 
                             {!isMissingRequired && (
-                                <div className="bg-brand-neutral-dark dark:bg-gradient-to-r dark:from-[#FCAAED] dark:to-[#F1B197] rounded-2xl shadow-xl dark:shadow-[0_0_40px_rgba(252,170,237,0.2)] p-6 text-white dark:text-brand-neutral-dark overflow-hidden relative animate-fadeIn transition-colors duration-300">
-                                    <Calculator className="absolute -right-4 -top-4 w-24 h-24 opacity-10 dark:opacity-20" />
-                                    <h3 className="text-xs font-headline font-black uppercase tracking-widest text-slate-300 dark:text-slate-900/60 mb-2">Estimated Tooling Cost</h3>
-                                    <div className="text-4xl font-headline font-black mb-1 leading-none text-white dark:text-slate-900">{total.toLocaleString()}</div>
-                                    <div className="text-xs font-bold text-slate-400 dark:text-slate-900/60 mb-6 uppercase">Total THB ({session.healthCoverage})</div>
-                                    <div className="pt-4 border-t border-slate-700 dark:border-slate-900/10">
-                                        <h4 className="text-[10px] font-bold uppercase tracking-widest text-slate-300 dark:text-slate-900/80 mb-3">Itemized Breakdown</h4>
-                                        <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                                            {breakdown.length > 0 ? (
-                                                breakdown.map((item, i) => {
-                                                    const tool = session.tools.find(t => t.id === item.id);
-                                                    const isReusable = tool?.options?.some(o => o.value === NEW_REUSED_OPTIONS.NEW || o.value === NEW_REUSED_OPTIONS.REUSED);
-                                                    return (
-                                                        <div key={i} className="flex justify-between items-start text-sm group">
-                                                            <div className="flex flex-col flex-1 mr-3">
-                                                                <div className="flex items-center gap-2 flex-wrap">
-                                                                    <span className="font-semibold text-white dark:text-slate-900 truncate">{item.name}</span>
-                                                                    {isReusable && (
-                                                                        <div className="flex items-center gap-1.5 shrink-0">
-                                                                            {tool?.disabled ? (
-                                                                                <span className="inline-flex items-center justify-center h-[20px] w-[60px] rounded-full text-[7px] font-black bg-brand-secondary dark:bg-slate-200 text-white dark:text-slate-900 leading-none uppercase shrink-0">New Only</span>
-                                                                            ) : (
-                                                                                <button 
-                                                                                    onClick={() => updateChecklist('tools', item.id, 'selectedValue', item.isReused ? NEW_REUSED_OPTIONS.NEW : NEW_REUSED_OPTIONS.REUSED)}
-                                                                                    className={`relative inline-flex h-[20px] w-[60px] items-center rounded-full transition-all focus:outline-none ${!item.isReused ? 'bg-brand-secondary dark:bg-slate-200' : 'bg-white/30 dark:bg-slate-800/50'}`}
-                                                                                >
-                                                                                    <span className={`absolute text-[8px] font-black uppercase tracking-wider transition-all ${!item.isReused ? 'right-2.5 text-white dark:text-slate-900' : 'left-2.5 text-slate-900 dark:text-white'}`}>{item.isReused ? 'Reuse' : 'New'}</span>
-                                                                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-all shadow-sm ${!item.isReused ? 'translate-x-1' : 'translate-x-[40px]'}`} />
-                                                                                </button>
-                                                                            )}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                            <span className="font-mono text-white dark:text-slate-900 tracking-tight shrink-0 mt-0.5 font-bold">{item.isReused ? '฿0' : `฿${item.price.toLocaleString()}`}</span>
-                                                        </div>
-                                                    );
-                                                })
-                                            ) : <div className="text-xs text-slate-400 dark:text-slate-800 italic pt-2 font-medium">No tools selected yet</div>}
-                                        </div>
-                                    </div>
-                                </div>
+                                <CostSummary
+                                    total={total}
+                                    breakdown={breakdown}
+                                    session={session}
+                                    onToolChange={(itemId, value) => updateChecklist('tools', itemId, 'selectedValue', value)}
+                                />
                             )}
 
                             {!isMissingRequired && (

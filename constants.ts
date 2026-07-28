@@ -1,3 +1,5 @@
+import type { SurgeonGroups } from './domain/toolTypes';
+
 // --- Types ---
 
 export interface Option {
@@ -47,11 +49,21 @@ export const GDI_TYPES = ['Ahmed', 'XEN', 'Express GFD', 'Preserflo', 'AADI'];
 export const PPV_TYPES = ['23G', '25G'];
 
 // Surgeon Group Data
-export const SURGEON_GROUPS: Record<string, string[]> = {
+export const DEFAULT_SURGEON_GROUPS: SurgeonGroups = {
   'A': ['รุ่งเกียรติ', 'อรณิสา', 'อัจฉริยา', 'ดำรงค์'],
   'B': ['อทิตยา', 'ภารดี', 'นภาพร', 'เหมือนพลอย', 'ลินดา'],
   'C': ['เจนจิต', 'เกษรา', 'จุฬาลักษณ์', 'พิชญา', 'ภาวิณี'],
   'D': ['ดิเรก', 'วรพร', 'ธิดารัตน์', 'พิชญ์', 'ธัญญลักษณ์'],
   'Others': ['Resident', 'Fellow'],
 };
+
+export function getSurgeonGroups(): SurgeonGroups {
+  try {
+    const saved = localStorage.getItem('ophthal_surgeon_groups');
+    if (saved) return JSON.parse(saved);
+  } catch (e) {}
+  return DEFAULT_SURGEON_GROUPS;
+}
+
+export const SURGEON_GROUPS = getSurgeonGroups();
 export const CENTURION_PREFERRED_SURGEONS = ['เกษรา', 'นภาพร', 'ลินดา'];

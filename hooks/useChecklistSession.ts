@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { ANESTHESIA_TYPES, COVERAGE_TYPES, ChecklistItemData, PatientSession } from '../constants';
-import { DBAction, DBTool } from '../configService';
+import { DBAction, DBOperation, DBRule, DBTool } from '../configService';
 import { ChecklistField, ChecklistValue } from '../components/ChecklistSection';
 import { generateChecklist } from '../domain/checklistGenerator';
 import { PPV_GAUGES, RETINAL_PROCEDURE_KEYWORDS, ensureDefaultPpvGauge, shouldAutoSelectPpv } from '../domain/ppvSelection';
 import { normalizeText } from '../domain/checklistGenerator';
 
-type ChecklistConfig = { tools: DBTool[]; actions: DBAction[]; operations: unknown[]; rules: unknown[]; prices: unknown[] };
+type ChecklistConfig = { tools: DBTool[]; actions: DBAction[]; operations: DBOperation[]; rules: DBRule[]; prices: unknown[] };
 
 function generateUUID() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -14,6 +14,20 @@ function generateUUID() {
         const v = c === 'x' ? r : (r & 0x3) | 0x8;
         return v.toString(16);
     });
+}
+
+function buildChecklistActions(
+    actions: DBAction[],
+    existingActions: ChecklistItemData[] = [],
+): ChecklistItemData[] {
+    return actions
+        .filter(action => action.is_active !== false)
+        .map(action => {
+            const existing = existingActions.find(item => item.id === action.id);
+            return existing
+                ? { ...existing, item: action.item }
+                : { id: action.id, item: action.item, type: 'checkbox' as const, checked: false };
+        });
 }
 
 export function createInitialSession(): PatientSession {
@@ -30,13 +44,16 @@ export function useChecklistSession(config: ChecklistConfig | null) {
 
     useEffect(() => {
         if (!config) return;
-        const actions: ChecklistItemData[] = config.actions.map(action => ({ id: action.id, item: action.item, type: 'checkbox', checked: false }));
+        const actions = buildChecklistActions(config.actions);
         const tools: ChecklistItemData[] = config.tools.map(tool => {
             const isCtr = tool.id === 'ctr-no';
             return {
                 id: tool.id, item: isCtr ? 'CTR No.' : tool.item,
                 type: (isCtr ? 'number-input' : tool.type) as ChecklistItemData['type'], options: tool.options,
-                checked: false, selectedValue: tool.type === 'radio' ? tool.default_value : null,
+                checked: false,
+                selectedValue: tool.type === 'radio' && typeof tool.default_value === 'string'
+                    ? tool.default_value
+                    : null,
                 value: isCtr ? '' : tool.type === 'number-input' ? (Array.isArray(tool.default_value) ? tool.default_value : ['', '']) : '',
             };
         });
@@ -57,9 +74,7 @@ export function useChecklistSession(config: ChecklistConfig | null) {
             setSession(prev => ({ ...prev, diagnosis: ensureDefaultPpvGauge(prev.diagnosis), updatedAt: new Date() }));
             return;
         }
-        const baseActions = session.actions.length > 0
-            ? session.actions
-            : config.actions.map(action => ({ id: action.id, item: action.item, type: 'checkbox' as const, checked: false }));
+        const baseActions = buildChecklistActions(config.actions, session.actions);
         const baseTools = session.tools.length > 0
             ? session.tools
             : config.tools.map(tool => {
@@ -70,11 +85,13 @@ export function useChecklistSession(config: ChecklistConfig | null) {
                     type: (isCtr ? 'number-input' : tool.type) as ChecklistItemData['type'],
                     options: tool.options,
                     checked: false,
-                    selectedValue: tool.type === 'radio' ? tool.default_value : null,
+                    selectedValue: tool.type === 'radio' && typeof tool.default_value === 'string'
+                        ? tool.default_value
+                        : null,
                     value: isCtr ? '' : tool.type === 'number-input' ? (Array.isArray(tool.default_value) ? tool.default_value : ['', '']) : '',
                 };
             });
-        const result = generateChecklist({ ...session, actions: baseActions, tools: baseTools }, config as Parameters<typeof generateChecklist>[1]);
+        const result = generateChecklist({ ...session, actions: baseActions, tools: baseTools }, config);
         setSession(prev => ({ ...prev, actions: result.actions, tools: result.tools, mpSelectedTypes: result.mpSelectedTypes }));
     }, [config, session.operationInput, session.diagnosis, session.anesthesiaType, session.surgeonName, session.actions.length, session.tools.length, ppvUserDismissed]);
 

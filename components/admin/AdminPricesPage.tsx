@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChevronDown, Edit, FolderSymlink, Menu, Plus, Save, Trash2, X } from 'lucide-react';
 import { DBPrice, DBTool } from '../../configService';
+import type { ToolType } from '../../domain/toolTypes';
 import { NEW_REUSED_OPTIONS } from '../../constants';
 import AdminFeatureToolbar from './AdminFeatureToolbar';
 import AdminModalFrame from './AdminModalFrame';
@@ -15,7 +16,6 @@ export interface NewSubtype {
     ucs: number;
 }
 
-type ToolType = 'checkbox' | 'radio' | 'number-input';
 type PriceEditData = { displayName: string; csmbs: number; sss: number; ucs: number };
 type Config = { tools: DBTool[]; prices: DBPrice[] };
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
@@ -203,7 +203,7 @@ export default function AdminPricesPage({ config, categorizedPrices, isOffline, 
                                                     <div className="relative">
                                                         <select
                                                             value={newToolType}
-                                                            onChange={e => setNewToolType(e.target.value as any)}
+                                                            onChange={e => setNewToolType(e.target.value as ToolType)}
                                                             className="w-full appearance-none bg-white dark:bg-[#151f32] border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-gray-800 dark:text-slate-200 outline-none focus:ring-0 focus:border-gray-200 dark:focus:border-slate-700 transition-all"
                                                         >
                                                             <option value="checkbox">None</option>

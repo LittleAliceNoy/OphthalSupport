@@ -231,6 +231,15 @@ begin
 end;
 $$;
 
+create or replace function public.admin_delete_action(p_action_id text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+    delete from operation_rules
+    where target_type = 'action' and target_id = p_action_id;
+    delete from actions where id = p_action_id;
+end;
+$$;
+
 create or replace function public.admin_add_subtype_to_tool(p_tool_id text, p_options jsonb, p_price jsonb)
 returns void language plpgsql security definer set search_path = public as $$
 begin
@@ -307,6 +316,7 @@ $$;
 
 grant execute on function public.admin_create_tool_with_prices(jsonb, jsonb) to anon, authenticated;
 grant execute on function public.admin_delete_tool(text) to anon, authenticated;
+grant execute on function public.admin_delete_action(text) to anon, authenticated;
 grant execute on function public.admin_add_subtype_to_tool(text, jsonb, jsonb) to anon, authenticated;
 grant execute on function public.admin_delete_subtype_and_update_tool(text, text, jsonb, text, jsonb) to anon, authenticated;
 grant execute on function public.admin_update_tool_placement(text, text, jsonb) to anon, authenticated;

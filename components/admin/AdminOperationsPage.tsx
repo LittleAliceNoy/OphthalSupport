@@ -7,6 +7,7 @@ import OperationHeader from './OperationHeader';
 import OperationRuleEditor, { EditableOperationRule } from './OperationRuleEditor';
 import OperationRuleSummary from './OperationRuleSummary';
 import OperationSummary from './OperationSummary';
+import OperationCreateModal from './OperationCreateModal';
 
 type Config = { tools: DBTool[]; actions: DBAction[]; operations: DBOperation[]; rules: DBRule[] };
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
@@ -128,130 +129,23 @@ export default function AdminOperationsPage({ config, categories, groupedOperati
                                     else setShowAddOpForm(true);
                                 }}
                             />
-                                       {/* Add Operation Form Modal */}
                             {showAddOpForm && (
-                                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn p-4">
-                                    <div className="bg-white dark:bg-[#151f32] rounded-2xl shadow-xl border border-gray-150 dark:border-slate-800 p-5 sm:p-6 w-full max-w-xl animate-scaleUp overflow-y-auto max-h-[90vh]">
-                                        <div className="flex justify-between items-center mb-4 border-b border-gray-50 dark:border-slate-800 pb-2">
-                                            <h3 className="text-xs font-headline font-bold text-gray-900 dark:text-white uppercase tracking-wide flex items-center gap-2">
-                                                <Plus size={16} className="text-[#8e5a7d] dark:text-brand-primary-dark" />
-                                                Add Surgery Operation
-                                            </h3>
-                                            <button 
-                                                type="button"
-                                                onClick={handleCloseAddOpForm}
-                                                className="text-gray-400 hover:text-gray-500 transition-colors p-1"
-                                            >
-                                                <X size={18} />
-                                            </button>
-                                        </div>
-                                        <form onSubmit={handleCreateOperation} className="mt-4 p-4 border border-dashed border-gray-200 dark:border-slate-700 rounded-xl space-y-4">
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Operation Name</label>
-                                                    <input
-                                                        type="text"
-                                                        value={newOpName}
-                                                        onChange={e => setNewOpName(e.target.value)}
-                                                        placeholder="e.g. PPV, Phaco, GDI"
-                                                        className="w-full bg-gray-50 dark:bg-slate-850 border border-gray-250 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
-                                                        required
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Category</label>
-                                                    <div className="relative">
-                                                        <select
-                                                            value={newOpCategory}
-                                                            onChange={e => setNewOpCategory(e.target.value)}
-                                                            className="w-full appearance-none bg-white dark:bg-[#151f32] border border-gray-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-gray-800 dark:text-slate-200 outline-none focus:ring-0 focus:border-gray-200 dark:focus:border-slate-700 transition-all"
-                                                        >
-                                                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                                                        </select>
-                                                        <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <label className="text-[10px] font-bold text-gray-500 dark:text-slate-400 block mb-1">Trigger Keywords</label>
-                                                <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                                                    {newOpKeywords.map((kw, idx) => (
-                                                        <span 
-                                                            key={idx} 
-                                                            className="inline-flex items-center gap-1 bg-[#fcb7f0]/35 dark:bg-[#fcb7f0]/15 text-[#8e5a7d] dark:text-[#fcb7f0] border border-[#fcb7f0]/35 text-[10px] font-bold px-2 py-0.5 rounded-full transition-all"
-                                                        >
-                                                            {kw}
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleRemoveKeywordFromNewOp(idx)}
-                                                                className="hover:bg-[#fcb7f0]/50 dark:hover:bg-[#fcb7f0]/30 rounded-full p-0.5 transition-all text-[#8e5a7d] dark:text-[#fcb7f0]"
-                                                            >
-                                                                <X size={10} strokeWidth={3} />
-                                                            </button>
-                                                        </span>
-                                                    ))}
-                                                    
-                                                    {isAddingNewOpKeyword ? (
-                                                        <input
-                                                            type="text"
-                                                            autoFocus
-                                                            value={newOpKeywordInput}
-                                                            onChange={e => setNewOpKeywordInput(e.target.value)}
-                                                            onBlur={() => {
-                                                                if (newOpKeywordInput.trim()) {
-                                                                    handleAddKeywordToNewOp(newOpKeywordInput);
-                                                                }
-                                                                setIsAddingNewOpKeyword(false);
-                                                            }}
-                                                            onKeyDown={e => {
-                                                                if (e.key === 'Enter') {
-                                                                    e.preventDefault();
-                                                                    if (newOpKeywordInput.trim()) {
-                                                                        handleAddKeywordToNewOp(newOpKeywordInput);
-                                                                    }
-                                                                    setIsAddingNewOpKeyword(false);
-                                                                } else if (e.key === 'Escape') {
-                                                                    setIsAddingNewOpKeyword(false);
-                                                                    setNewOpKeywordInput('');
-                                                                }
-                                                            }}
-                                                            placeholder="Keyword..."
-                                                            className="bg-transparent border-b border-[#fcb7f0] px-1 py-0 text-[10px] font-bold outline-none text-[#8e5a7d] dark:text-[#fcb7f0] w-20 transition-all"
-                                                        />
-                                                    ) : (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setIsAddingNewOpKeyword(true);
-                                                                setNewOpKeywordInput('');
-                                                            }}
-                                                            className="inline-flex items-center gap-0.5 bg-white hover:bg-[#fcb7f0]/10 dark:bg-slate-900 dark:hover:bg-[#fcb7f0]/5 border border-dashed border-[#fcb7f0]/60 text-[#8e5a7d] dark:text-[#fcb7f0] text-[10px] font-bold px-2 py-0.5 rounded-full transition-all"
-                                                        >
-                                                            <Plus size={10} strokeWidth={3} /> Add
-                                                        </button>
-                                                    )}
-                                                </div>
-                                                <span className="text-[9px] text-gray-400 dark:text-slate-555 mt-1 block font-medium">Keywords are case-insensitive. Small keywords (≤2 characters) will match whole words only.</span>
-                                            </div>
-                                            <div className="flex justify-end gap-2 pt-2 border-t border-gray-50 dark:border-slate-800">
-                                                <button
-                                                    type="button"
-                                                    onClick={handleCloseAddOpForm}
-                                                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-350 text-xs font-bold rounded-lg transition-all"
-                                                >
-                                                    Cancel
-                                                </button>
-                                                <button
-                                                    type="submit"
-                                                    className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg transition-all flex items-center gap-1"
-                                                >
-                                                    <Save size={14} />
-                                                    Save Operation
-                                                </button>
-                                            </div>
-                                        </form>
-                                    </div>
-                                </div>
+                                <OperationCreateModal
+                                    categories={categories}
+                                    name={newOpName}
+                                    category={newOpCategory}
+                                    keywords={newOpKeywords}
+                                    keywordInput={newOpKeywordInput}
+                                    isAddingKeyword={isAddingNewOpKeyword}
+                                    onNameChange={setNewOpName}
+                                    onCategoryChange={setNewOpCategory}
+                                    onKeywordInputChange={setNewOpKeywordInput}
+                                    onAddingKeywordChange={setIsAddingNewOpKeyword}
+                                    onAddKeyword={handleAddKeywordToNewOp}
+                                    onRemoveKeyword={handleRemoveKeywordFromNewOp}
+                                    onClose={handleCloseAddOpForm}
+                                    onSubmit={handleCreateOperation}
+                                />
                             )}
         
                             {/* Operations Accordion List */}

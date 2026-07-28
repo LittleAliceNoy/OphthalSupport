@@ -38,6 +38,21 @@ function markSelected(item: ChecklistItemData | undefined, selectedValue?: strin
   if (selectedValue) item.selectedValue = selectedValue;
 }
 
+function isHeavySiliconeOilSelected(normalizedText: string): boolean {
+  return ['hd so', 'heavy so', 'heavy silicone oil']
+    .some(keyword => normalizedText.includes(keyword));
+}
+
+function isNormalSiliconeOilSelected(normalizedText: string): boolean {
+  const withoutHeavyOil = normalizedText.replace(
+    /\b(?:hd\s+so|heavy\s+so|heavy\s+silicone\s+oil)\b/g,
+    ' ',
+  );
+  return /\bso\b/.test(withoutHeavyOil)
+    || withoutHeavyOil.includes('soi')
+    || withoutHeavyOil.includes('silicone oil injection');
+}
+
 function applyAnesthesiaRules(actions: ChecklistItemData[], session: PatientSession, normalizedText: string): void {
   if (session.anesthesiaType !== ANESTHESIA_TYPES.LA) return;
 
@@ -64,11 +79,23 @@ function applyOperationRules(
   normalizedText: string,
 ): boolean {
   let showMp = false;
+  const heavySiliconeOilSelected = isHeavySiliconeOilSelected(normalizedText);
+  const normalSiliconeOilSelected = isNormalSiliconeOilSelected(normalizedText);
 
   for (const operation of config.operations) {
     const operationMatches = matchesOperationKeyword(operation.name, normalizedText)
       || operation.keywords.some(keyword => matchesOperationKeyword(keyword, normalizedText));
     if (!operationMatches) continue;
+
+    // "HD SO" contains the short keyword "SO", but it is a distinct
+    // procedure and must not also apply the normal SO rules.
+    if (
+      normalizeText(operation.name).trim() === 'so'
+      && heavySiliconeOilSelected
+      && !normalSiliconeOilSelected
+    ) {
+      continue;
+    }
 
     for (const rule of config.rules.filter(rule => rule.operation_id === operation.id)) {
       const list = rule.target_type === 'action' ? actions : tools;

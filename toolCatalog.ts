@@ -1,8 +1,10 @@
+import type { ToolOption, ToolType } from './domain/toolTypes';
+
 export interface ToolCatalogEntry {
     id: string;
     item: string;
-    type: 'checkbox' | 'radio' | 'number-input';
-    options: Array<{ label: string; value: string }> | null;
+    type: ToolType;
+    options: ToolOption[] | null;
     default_value: string | string[] | null;
     sort_order: number;
     category: string;

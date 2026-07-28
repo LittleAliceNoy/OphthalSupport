@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { DBPrice, DBTool } from '../../../configService';
-import { addSubtypeToTool, createToolWithPrices, deleteTool, deleteSubtypeAndUpdateTool, updatePrice, updateTool, updateToolPlacement, updateToolPrices } from '../../../adminService';
+import { addSubtypeToTool, createToolWithPrices, deleteTool, deleteSubtypeAndUpdateTool, updateCategoryPrices, updatePrice, updateToolPlacement } from '../../../adminService';
 import { getToolDisplayName } from '../adminCatalog';
 import { filterAndSortPrices, getPriceDisplayName, groupPricesByCategory } from '../adminSelectors';
 import { NewSubtype, PricesViewActions, PricesViewState } from '../AdminPricesPage';
+import type { ToolType } from '../../../domain/toolTypes';
+import { buildToolPlacementUpdates, toSlug } from '../priceEditorUtils';
 
-type ToolType = 'checkbox' | 'radio' | 'number-input';
 type PriceConfig = { tools: DBTool[]; prices: DBPrice[] };
 
 interface UseAdminPricesArgs {
@@ -90,13 +91,22 @@ export function useAdminPrices({ config, onRefresh, showToast, setLoading }: Use
         }
         setLoading('Saving category prices...');
         try {
-            await updateToolPrices(items.map(item => { const data = editPricesData[item.id]; return data ? { id: item.id, csmbs_price: Number(data.csmbs), sss_price: Number(data.sss), ucs_price: Number(data.ucs), display_name: data.displayName.trim() } : null; }).filter((item): item is NonNullable<typeof item> => item !== null));
-            const toolIds = Array.from(new Set<string>(items.map(item => String(item.tool_id))));
-            await Promise.all(toolIds.flatMap(toolId => {
-                const name = editToolNames[toolId]?.trim();
+            const priceUpdates = items.flatMap(item => {
+                const data = editPricesData[item.id];
+                return data ? [{
+                    id: item.id,
+                    csmbs_price: Number(data.csmbs),
+                    sss_price: Number(data.sss),
+                    ucs_price: Number(data.ucs),
+                    display_name: data.displayName.trim(),
+                }] : [];
+            });
+            const toolUpdates = Array.from(new Set<string>(items.map(item => item.tool_id))).flatMap(toolId => {
+                const item = editToolNames[toolId]?.trim();
                 const original = config.tools.find(tool => tool.id === toolId)?.item;
-                return name && name !== original ? [updateTool(toolId, { item: name })] : [];
-            }));
+                return item && item !== original ? [{ id: toolId, item }] : [];
+            });
+            await updateCategoryPrices(priceUpdates, toolUpdates);
             showToast(`All prices in "${category}" updated successfully`, 'success'); setEditingCategory(null); await onRefresh();
         } catch (error: unknown) { showToast(error instanceof Error ? error.message : 'Error updating details', 'error'); } finally { setLoading(null); }
     };
@@ -140,7 +150,10 @@ export function useAdminPrices({ config, onRefresh, showToast, setLoading }: Use
         });
     };
     const handleUpdateToolName = (toolId: string, value: string) => setEditToolNames(prev => ({ ...prev, [toolId]: value }));
-    const handleDisplayNameChange = (value: string) => { setNewToolDisplayName(value); setNewToolId(value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '')); };
+    const handleDisplayNameChange = (value: string) => {
+        setNewToolDisplayName(value);
+        setNewToolId(toSlug(value));
+    };
     const handleAddSubtypeRow = () => setNewToolSubtypes(prev => [...prev, { subKey: '', displayName: '', csmbs: 0, sss: 0, ucs: 0 }]);
     const handleRemoveSubtypeRow = (index: number) => setNewToolSubtypes(prev => prev.filter((_, i) => i !== index));
     const handleUpdateSubtypeRow = (
@@ -151,12 +164,7 @@ export function useAdminPrices({ config, onRefresh, showToast, setLoading }: Use
         setNewToolSubtypes(prev => prev.map((row, rowIndex) => {
             if (rowIndex !== index) return row;
 
-            const generatedSubKey = field === 'displayName' && !row.subKey
-                ? String(value)
-                    .toLowerCase()
-                    .replace(/[^a-z0-9]+/g, '-')
-                    .replace(/(^-|-$)+/g, '')
-                : undefined;
+            const generatedSubKey = field === 'displayName' && !row.subKey ? toSlug(String(value)) : undefined;
 
             return {
                 ...row,
@@ -282,7 +290,42 @@ export function useAdminPrices({ config, onRefresh, showToast, setLoading }: Use
             setLoading(null);
         }
     };
-    const handleMoveToolToPosition = async (draggedId: string, targetId: string, sourceCategory: string, targetCategory: string) => { setLoading('Moving tool...'); try { const ids = (categorizedPrices[targetCategory] || []).reduce<string[]>((all, item) => all.includes(item.tool_id) ? all : [...all, item.tool_id], []); const reordered = [...ids.filter(id => id !== draggedId)]; const targetIndex = targetId === 'end' ? reordered.length : reordered.indexOf(targetId); reordered.splice(targetIndex < 0 ? reordered.length : targetIndex, 0, draggedId); const result = await updateToolPlacement(draggedId, sourceCategory === targetCategory ? null : targetCategory, reordered.map((id, index) => ({ id, sort_order: (index + 1) * 10 }))); if (!result.categorySupported) { showToast('Run SQL to enable category changes: ALTER TABLE tools ADD COLUMN category VARCHAR;', 'error'); return; } showToast(sourceCategory === targetCategory ? 'Tool order updated successfully' : `Tool moved to ${targetCategory} successfully`, 'success'); await onRefresh(); } catch (error: any) { showToast(error?.message?.includes('column "sort_order"') || error?.code === '42703' ? 'Enable ordering by running SQL: ALTER TABLE tools ADD COLUMN sort_order INT DEFAULT 0;' : error?.message || 'Error updating order', 'error'); } finally { setLoading(null); } };
+    const handleMoveToolToPosition = async (
+        draggedId: string,
+        targetId: string,
+        sourceCategory: string,
+        targetCategory: string,
+    ) => {
+        setLoading('Moving tool...');
+        try {
+            const result = await updateToolPlacement(
+                draggedId,
+                sourceCategory === targetCategory ? null : targetCategory,
+                buildToolPlacementUpdates(categorizedPrices[targetCategory] || [], draggedId, targetId),
+            );
+            if (!result.categorySupported) {
+                showToast('Run SQL to enable category changes: ALTER TABLE tools ADD COLUMN category VARCHAR;', 'error');
+                return;
+            }
+            showToast(
+                sourceCategory === targetCategory
+                    ? 'Tool order updated successfully'
+                    : `Tool moved to ${targetCategory} successfully`,
+                'success',
+            );
+            await onRefresh();
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Error updating order';
+            showToast(
+                message.includes('column "sort_order"')
+                    ? 'Enable ordering by running SQL: ALTER TABLE tools ADD COLUMN sort_order INT DEFAULT 0;'
+                    : message,
+                'error',
+            );
+        } finally {
+            setLoading(null);
+        }
+    };
 
     const state: PricesViewState = { priceSearch, selectedCategory, editingCategory, editingPriceId, editPricesData, editToolNames, showAddToolForm, newToolId, newToolDisplayName, newToolCategory, newToolCsmbs, newToolSss, newToolUcs, newToolType, newToolSubtypes, activeAddSubtypeTool, newSubtypeKey, newSubtypeDisplayName, newSubtypeCsmbs, newSubtypeSss, newSubtypeUcs, draggedToolId, draggedCategory, dragOverToolId, dragOverCategory };
     const actions: PricesViewActions = { setPriceSearch, setSelectedCategory, setEditingCategory, setEditingPriceId, setShowAddToolForm, setNewToolId, setNewToolDisplayName, setNewToolCategory, setNewToolCsmbs, setNewToolSss, setNewToolUcs, setNewToolType, setNewSubtypeKey, setNewSubtypeDisplayName, setNewSubtypeCsmbs, setNewSubtypeSss, setNewSubtypeUcs, setActiveAddSubtypeTool, setDraggedToolId, setDraggedCategory, setDragOverToolId, setDragOverCategory, handleCloseAddToolForm, handleDisplayNameChange, handleAddSubtypeRow, handleUpdateSubtypeRow, handleRemoveSubtypeRow, handleAddToolSubmit, handleSaveCategoryPrices, handleSavePriceRow, handleUpdateEditField, handleUpdateToolName, handleStartEditCategory, handleStartEditPriceRow, handleDeleteTool, handleDeleteSubtype, handleAddSubtypeSubmit, handleMoveToolToPosition, hasUnsavedChanges, hasCategoryChanges, hasPriceRowChanges };

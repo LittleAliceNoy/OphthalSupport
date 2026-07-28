@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import type { ToolOption, ToolType } from './domain/toolTypes';
 import { 
   FALLBACK_ACTIONS, 
   FALLBACK_TOOLS, 
@@ -10,13 +11,17 @@ import {
 export interface DBTool {
   id: string;
   item: string;
-  type: string;
-  options: any;
-  default_value: any;
+  type: ToolType;
+  options: ToolOption[] | null;
+  default_value: DBToolDefaultValue;
   sort_order?: number;
   category?: string;
   is_active?: boolean;
 }
+
+export type DBToolOption = ToolOption;
+
+export type DBToolDefaultValue = string | number | string[] | null;
 
 export interface DBAction {
   id: string;
@@ -64,7 +69,7 @@ export const fetchConfig = async () => {
       { data: prices, error: pricesErr }
     ] = await Promise.all([
       supabase.from('tools').select('*').eq('is_active', true),
-      supabase.from('actions').select('*').eq('is_active', true),
+      supabase.from('actions').select('*'),
       supabase.from('operations').select('*'),
       supabase.from('operation_rules').select('*'),
       supabase.from('tool_prices').select('*')

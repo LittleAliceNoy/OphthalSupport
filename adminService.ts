@@ -8,6 +8,11 @@ export interface PriceUpdate {
     display_name: string;
 }
 
+export interface ToolNameUpdate {
+    id: string;
+    item: string;
+}
+
 export interface ToolInsert {
     id: string;
     item: string;
@@ -38,6 +43,12 @@ export interface OperationUpdate extends OperationInsert {
     id: string;
 }
 
+export interface ActionInsert {
+    id: string;
+    item: string;
+    is_active?: boolean;
+}
+
 export interface RuleInsert {
     operation_id: string;
     target_type: 'tool' | 'action';
@@ -61,32 +72,27 @@ function isMissingColumn(error: { message?: string; code?: string } | null | und
 }
 
 export async function updateToolPrices(updates: PriceUpdate[]): Promise<{ displayNameSupported: boolean }> {
-    const results = await Promise.all(updates.map(update => supabase
-        .from('tool_prices')
-        .update({
-            csmbs_price: update.csmbs_price,
-            sss_price: update.sss_price,
-            ucs_price: update.ucs_price,
-            display_name: update.display_name
-        })
-        .eq('id', update.id)));
-    const missingName = results.find(result => isMissingColumn(result.error, 'display_name'));
-    const firstError = results.find(result => result.error && !isMissingColumn(result.error, 'display_name'))?.error;
-    if (firstError) throw firstError;
-    if (missingName) {
-        const fallbackResults = await Promise.all(updates.map(update => supabase
-            .from('tool_prices')
-            .update({ csmbs_price: update.csmbs_price, sss_price: update.sss_price, ucs_price: update.ucs_price })
-            .eq('id', update.id)));
-        const fallbackError = fallbackResults.find(result => result.error)?.error;
-        if (fallbackError) throw fallbackError;
-        return { displayNameSupported: false };
-    }
+    if (updates.length === 0) return { displayNameSupported: true };
+    const { error } = await supabase.rpc('admin_update_tool_prices', {
+        p_updates: updates,
+    });
+    if (error) throw new Error(`Supabase price update failed: ${error.message || 'Unable to update prices'}`);
     return { displayNameSupported: true };
 }
 
 export async function updatePrice(update: PriceUpdate): Promise<{ displayNameSupported: boolean }> {
     return updateToolPrices([update]);
+}
+
+export async function updateCategoryPrices(
+    priceUpdates: PriceUpdate[],
+    toolUpdates: ToolNameUpdate[],
+): Promise<void> {
+    const { error } = await supabase.rpc('admin_update_category_prices', {
+        p_price_updates: priceUpdates,
+        p_tool_updates: toolUpdates,
+    });
+    if (error) throw new Error(`Supabase category price update failed: ${error.message || 'Unable to update prices'}`);
 }
 
 export async function insertTool(tool: ToolInsert): Promise<{ categorySupported: boolean }> {
@@ -232,8 +238,25 @@ export async function updateOperationPlacement(operationId: string, category: st
 }
 
 export async function deleteOperation(operationId: string): Promise<void> {
-    const rules = await supabase.from('operation_rules').delete().eq('operation_id', operationId);
-    if (rules.error) throw rules.error;
-    const operation = await supabase.from('operations').delete().eq('id', operationId);
-    if (operation.error) throw operation.error;
+    const { error } = await supabase.rpc('admin_delete_operation', { p_operation_id: operationId });
+    if (error) throw new Error(`Supabase operation deletion failed: ${error.message || 'Unable to delete operation'}`);
+}
+
+export async function createAction(action: ActionInsert): Promise<void> {
+    const result = await supabase.from('actions').insert([{
+        id: action.id,
+        item: action.item,
+        is_active: action.is_active ?? true
+    }]);
+    if (result.error) throw result.error;
+}
+
+export async function updateAction(id: string, changes: { item?: string; is_active?: boolean }): Promise<void> {
+    const result = await supabase.from('actions').update(changes).eq('id', id);
+    if (result.error) throw result.error;
+}
+
+export async function deleteAction(actionId: string): Promise<void> {
+    const { error } = await supabase.rpc('admin_delete_action', { p_action_id: actionId });
+    if (error) throw error;
 }
