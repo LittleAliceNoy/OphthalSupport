@@ -2,6 +2,7 @@ import React, { lazy, Suspense, useState, useEffect, useMemo } from 'react';
 
 import { getSurgeonGroups } from './constants';
 import { fetchConfig, DBTool, DBAction, DBOperation, DBRule, DBPrice } from './configService';
+import { supabase } from './supabase';
 import { calculateCostAndBreakdown } from './domain/pricing';
 import ChecklistView from './components/ChecklistView';
 import { useChecklistSession } from './hooks/useChecklistSession';
@@ -19,10 +20,26 @@ export default function App() {
     const [isDarkMode, setIsDarkMode] = useState(false);
     const [config, setConfig] = useState<{tools: DBTool[], actions: DBAction[], operations: DBOperation[], rules: DBRule[], prices: DBPrice[]} | null>(null);
     const [isOffline, setIsOffline] = useState(false);
+    const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
     const [surgeonGroups, setSurgeonGroupsState] = useState(getSurgeonGroups);
 
     useEffect(() => {
         fetchConfig().then(data => { setConfig(data); setIsOffline(data.isFallback); });
+    }, []);
+
+    useEffect(() => {
+        let mounted = true;
+        const updateAdminStatus = (session: { user?: { app_metadata?: Record<string, unknown> } } | null) => {
+            if (mounted) setIsAdminAuthenticated(session?.user?.app_metadata?.role === 'admin');
+        };
+
+        supabase.auth.getSession().then(({ data: { session } }) => updateAdminStatus(session));
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => updateAdminStatus(session));
+
+        return () => {
+            mounted = false;
+            subscription.unsubscribe();
+        };
     }, []);
 
     useEffect(() => {
@@ -84,7 +101,15 @@ export default function App() {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-fuchsia-50 via-rose-50 to-cyan-50 dark:bg-brand-neutral-dark dark:bg-none text-gray-800 dark:text-gray-100 font-sans transition-colors duration-300">
-            <AppHeader currentView={currentView} isDarkMode={isDarkMode} isOffline={isOffline} onViewChange={handleViewChange} onToggleTheme={toggleTheme} />
+            <AppHeader
+                currentView={currentView}
+                isDarkMode={isDarkMode}
+                isOffline={isOffline}
+                isAdminAuthenticated={isAdminAuthenticated}
+                onViewChange={handleViewChange}
+                onToggleTheme={toggleTheme}
+                onSignOut={async () => { await supabase.auth.signOut(); }}
+            />
 
             <main className="max-w-3xl mx-auto px-3 py-3 sm:px-4 sm:py-6">
                 {currentView === 'prices' ? (

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Eye, Moon, Settings, Sun, WifiOff } from 'lucide-react';
+import { Eye, LogOut, Moon, Settings, Sun, WifiOff } from 'lucide-react';
 
 export type AppView = 'checklist' | 'prices' | 'admin';
 
@@ -7,24 +7,29 @@ interface AppHeaderProps {
     currentView: AppView;
     isDarkMode: boolean;
     isOffline: boolean;
+    isAdminAuthenticated: boolean;
     onViewChange: (view: AppView) => void;
     onToggleTheme: () => void;
+    onSignOut: () => Promise<void>;
 }
 
-export default function AppHeader({ currentView, isDarkMode, isOffline, onViewChange, onToggleTheme }: AppHeaderProps) {
+export default function AppHeader({ currentView, isDarkMode, isOffline, isAdminAuthenticated, onViewChange, onToggleTheme, onSignOut }: AppHeaderProps) {
+    const isAdminView = currentView === 'admin' && isAdminAuthenticated;
     const navClass = (view: AppView) => `px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
         currentView === view
             ? 'bg-[#fcb7f0] text-slate-800 shadow-sm'
-            : 'text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-800'
+            : isAdminView
+                ? 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                : 'text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-800'
     }`;
 
     return (
-        <header className="bg-white dark:bg-[#151f32] border-b border-gray-100 dark:border-slate-800 sticky top-0 z-40 transition-colors duration-300">
+        <header className={`${isAdminView ? 'bg-slate-900 border-slate-700' : 'bg-white dark:bg-[#151f32] border-gray-100 dark:border-slate-800'} border-b sticky top-0 z-40 transition-colors duration-300`}>
             <div className="max-w-7xl mx-auto px-4 py-2 sm:py-3 flex items-center justify-between">
                 <div className="flex items-center gap-6">
                     <div className="flex items-center gap-3">
-                        <Eye size={24} className="text-[#8e5a7d] dark:text-pink-200" />
-                        <h1 className="font-headline font-bold text-xl sm:text-2xl text-[#101421] dark:text-white leading-tight">OphthalSupport</h1>
+                        <Eye size={24} className={isAdminView ? 'text-sky-300' : 'text-[#8e5a7d] dark:text-pink-200'} />
+                        <h1 className={`font-headline font-bold text-xl sm:text-2xl leading-tight ${isAdminView ? 'text-white' : 'text-[#101421] dark:text-white'}`}>{isAdminView ? 'Admin' : 'OphthalSupport'}</h1>
                     </div>
                     <nav className="flex items-center gap-1 flex-wrap">
                         <button onClick={() => onViewChange('checklist')} className={navClass('checklist')}>Checklist</button>
@@ -40,11 +45,21 @@ export default function AppHeader({ currentView, isDarkMode, isOffline, onViewCh
                             <WifiOff size={10} className="stroke-[2.5]" /> Offline
                         </span>
                     )}
-                    <button onClick={onToggleTheme} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-0 ${isDarkMode ? 'bg-brand-primary dark:bg-brand-primary-dark' : 'bg-gray-200 dark:bg-slate-700'}`} aria-label="Toggle theme">
-                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isDarkMode ? 'translate-x-6' : 'translate-x-1'} flex items-center justify-center shadow-sm`}>
-                            {isDarkMode ? <Moon size={10} className="text-brand-primary dark:text-brand-primary-dark" /> : <Sun size={10} className="text-gray-400" />}
-                        </span>
-                    </button>
+                    {currentView === 'admin' ? (
+                        <button
+                            onClick={onSignOut}
+                            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-bold text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+                            type="button"
+                        >
+                            <LogOut size={14} /> Sign out
+                        </button>
+                    ) : (
+                        <button onClick={onToggleTheme} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-0 ${isDarkMode ? 'bg-brand-primary dark:bg-brand-primary-dark' : 'bg-gray-200 dark:bg-slate-700'}`} aria-label="Toggle theme">
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isDarkMode ? 'translate-x-6' : 'translate-x-1'} flex items-center justify-center shadow-sm`}>
+                                {isDarkMode ? <Moon size={10} className="text-brand-primary dark:text-brand-primary-dark" /> : <Sun size={10} className="text-gray-400" />}
+                            </span>
+                        </button>
+                    )}
                 </div>
             </div>
         </header>

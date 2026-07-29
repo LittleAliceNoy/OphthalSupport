@@ -30,6 +30,44 @@ function buildChecklistActions(
         });
 }
 
+function createChecklistTool(tool: DBTool): ChecklistItemData {
+    const isCtr = tool.id === 'ctr-no';
+    const type = (isCtr ? 'number-input' : tool.type) as ChecklistItemData['type'];
+
+    return {
+        id: tool.id,
+        item: isCtr ? 'CTR No.' : tool.item,
+        type,
+        options: tool.options,
+        checked: false,
+        selectedValue: type === 'radio' && typeof tool.default_value === 'string'
+            ? tool.default_value
+            : null,
+        value: isCtr
+            ? ''
+            : type === 'number-input'
+                ? (Array.isArray(tool.default_value) ? tool.default_value : ['', ''])
+                : '',
+    };
+}
+
+export function buildChecklistTools(
+    tools: DBTool[],
+    existingTools: ChecklistItemData[] = [],
+): ChecklistItemData[] {
+    return tools.map(tool => {
+        const existing = existingTools.find(item => item.id === tool.id);
+        if (!existing) return createChecklistTool(tool);
+
+        return {
+            ...existing,
+            item: tool.id === 'ctr-no' ? 'CTR No.' : tool.item,
+            type: (tool.id === 'ctr-no' ? 'number-input' : tool.type) as ChecklistItemData['type'],
+            options: tool.options,
+        };
+    });
+}
+
 export function createInitialSession(): PatientSession {
     return {
         id: generateUUID(), diagnosis: '', operationInput: '', surgeonName: '',
@@ -44,20 +82,11 @@ export function useChecklistSession(config: ChecklistConfig | null) {
 
     useEffect(() => {
         if (!config) return;
-        const actions = buildChecklistActions(config.actions);
-        const tools: ChecklistItemData[] = config.tools.map(tool => {
-            const isCtr = tool.id === 'ctr-no';
-            return {
-                id: tool.id, item: isCtr ? 'CTR No.' : tool.item,
-                type: (isCtr ? 'number-input' : tool.type) as ChecklistItemData['type'], options: tool.options,
-                checked: false,
-                selectedValue: tool.type === 'radio' && typeof tool.default_value === 'string'
-                    ? tool.default_value
-                    : null,
-                value: isCtr ? '' : tool.type === 'number-input' ? (Array.isArray(tool.default_value) ? tool.default_value : ['', '']) : '',
-            };
-        });
-        setSession(prev => ({ ...prev, actions, tools }));
+        setSession(prev => ({
+            ...prev,
+            actions: buildChecklistActions(config.actions, prev.actions),
+            tools: buildChecklistTools(config.tools, prev.tools),
+        }));
     }, [config]);
 
     useEffect(() => {
@@ -75,22 +104,7 @@ export function useChecklistSession(config: ChecklistConfig | null) {
             return;
         }
         const baseActions = buildChecklistActions(config.actions, session.actions);
-        const baseTools = session.tools.length > 0
-            ? session.tools
-            : config.tools.map(tool => {
-                const isCtr = tool.id === 'ctr-no';
-                return {
-                    id: tool.id,
-                    item: isCtr ? 'CTR No.' : tool.item,
-                    type: (isCtr ? 'number-input' : tool.type) as ChecklistItemData['type'],
-                    options: tool.options,
-                    checked: false,
-                    selectedValue: tool.type === 'radio' && typeof tool.default_value === 'string'
-                        ? tool.default_value
-                        : null,
-                    value: isCtr ? '' : tool.type === 'number-input' ? (Array.isArray(tool.default_value) ? tool.default_value : ['', '']) : '',
-                };
-            });
+        const baseTools = buildChecklistTools(config.tools, session.tools);
         const result = generateChecklist({ ...session, actions: baseActions, tools: baseTools }, config);
         setSession(prev => ({ ...prev, actions: result.actions, tools: result.tools, mpSelectedTypes: result.mpSelectedTypes }));
     }, [config, session.operationInput, session.diagnosis, session.anesthesiaType, session.surgeonName, session.actions.length, session.tools.length, ppvUserDismissed]);

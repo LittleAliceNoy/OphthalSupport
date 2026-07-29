@@ -12,6 +12,16 @@ interface AuthState {
     email: string;
 }
 
+const ADMIN_LOGIN_USERNAME = import.meta.env.VITE_ADMIN_LOGIN_USERNAME || 'admin';
+const ADMIN_LOGIN_EMAIL = import.meta.env.VITE_ADMIN_LOGIN_EMAIL || 'admin@example.com';
+
+function resolveLoginEmail(identifier: string): string {
+    const normalizedIdentifier = identifier.trim();
+    return normalizedIdentifier.toLowerCase() === ADMIN_LOGIN_USERNAME.toLowerCase()
+        ? ADMIN_LOGIN_EMAIL
+        : normalizedIdentifier;
+}
+
 function isAdminUser(user: { app_metadata?: Record<string, unknown> } | null): boolean {
     return user?.app_metadata?.role === 'admin';
 }
@@ -57,7 +67,7 @@ export default function AdminAuthGate({ children }: AdminAuthGateProps) {
         setErrorMessage('');
 
         const { error } = await supabase.auth.signInWithPassword({
-            email: email.trim(),
+            email: resolveLoginEmail(email),
             password,
         });
 
@@ -76,12 +86,6 @@ export default function AdminAuthGate({ children }: AdminAuthGateProps) {
     if (auth.status === 'signed-in' && auth.isAdmin) {
         return (
             <>
-                <div className="flex items-center justify-between gap-3 mb-4 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800 dark:border-blue-900/40 dark:bg-blue-950/20 dark:text-blue-200">
-                    <span className="inline-flex items-center gap-1.5 font-semibold"><ShieldCheck size={14} /> Admin access: {auth.email}</span>
-                    <button onClick={handleSignOut} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 font-bold hover:bg-blue-100 dark:hover:bg-blue-900/30" type="button">
-                        <LogOut size={13} /> Sign out
-                    </button>
-                </div>
                 {children}
             </>
         );
@@ -103,12 +107,11 @@ export default function AdminAuthGate({ children }: AdminAuthGateProps) {
             <div className="mb-5 text-center">
                 <LogIn className="mx-auto mb-2 text-blue-600" size={28} />
                 <h2 className="text-sm font-bold text-gray-900 dark:text-white">Admin sign in</h2>
-                <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">Sign in with an authorized administrator account.</p>
             </div>
             <form onSubmit={handleSignIn} className="space-y-3">
                 <label className="block text-xs font-bold text-gray-600 dark:text-slate-300">
-                    Email
-                    <input value={email} onChange={event => setEmail(event.target.value)} type="email" autoComplete="username" required className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white" />
+                    Username or email
+                    <input value={email} onChange={event => setEmail(event.target.value)} type="text" autoComplete="username" required className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white" />
                 </label>
                 <label className="block text-xs font-bold text-gray-600 dark:text-slate-300">
                     Password

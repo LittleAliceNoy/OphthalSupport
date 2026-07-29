@@ -18,7 +18,7 @@ interface AdminPageProps {
 }
 
 export default function AdminPage({ config, onRefresh, isOffline, onEditingChange }: AdminPageProps) {
-    const [adminTab, setAdminTab] = useState<AdminTab>('prices');
+    const [adminTab, setAdminTab] = useState<AdminTab>('logic');
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
     const [loading, setLoading] = useState<string | null>(null);
     const showToast = (message: string, type: 'success' | 'error') => { setToast({ message, type }); setTimeout(() => setToast(null), 4000); };
