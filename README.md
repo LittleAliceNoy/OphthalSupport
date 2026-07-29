@@ -51,6 +51,25 @@ npm run build
 ```
 The output will be in the `dist` folder.
 
+## GitHub Pages deployment
+
+The repository includes a GitHub Actions workflow that deploys the
+`manage-action` branch to GitHub Pages after tests and a production build pass.
+
+Before the first deployment:
+
+1. In GitHub, open **Settings → Pages** and set the source to **GitHub Actions**.
+2. In **Settings → Secrets and variables → Actions**, add these repository secrets:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+3. Push to `manage-action` or manually run the **Deploy to GitHub Pages** workflow.
+
+The expected project-site URL is:
+`https://littlealicenoy.github.io/OphthalSupport/`
+
+Use only the public Supabase anon key. Never add a Supabase service-role key to
+GitHub secrets used by the browser build.
+
 ## Supabase production setup
 
 Do not run `supabase_schema.sql` against a production database. It is a
