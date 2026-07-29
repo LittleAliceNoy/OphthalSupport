@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Search, Tag } from 'lucide-react';
+import { ChevronDown, Search, Tag } from 'lucide-react';
 import { DBPrice, DBTool } from '../../configService';
 import { CATEGORY_LABELS, CATEGORY_ORDER, TOOL_CATEGORIES, TOOL_ORDER, getToolDisplayName } from '../../toolCatalog';
 import { CLINICAL_CATALOG } from '../../domain/catalog';
@@ -118,34 +118,54 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
     }, [categorizedTools, searchTerm, selectedCategory]);
 
     const categories = CATEGORY_ORDER;
+    const categoryOptions = ['All', ...categories];
 
     return (
         <div className="space-y-4">
             {/* Filter and search controls above the card */}
-            <div className="flex flex-row items-center justify-between gap-2 w-full flex-wrap sm:flex-nowrap">
-                {/* Category Filter Tabs styled as floating buttons */}
-                <div className="flex flex-row flex-nowrap overflow-x-auto no-scrollbar gap-1 max-w-full select-none py-0.5 shrink-0">
-                    {['All', ...categories].map(cat => {
-                        const isSelected = selectedCategory === cat;
-                        const displayLabel = CATEGORY_LABELS[cat] || cat;
+            <div className="flex w-full items-center justify-between gap-2">
+                {/* Category dropdown on narrow screens */}
+                <div className="relative w-36 flex-none sm:hidden">
+                    <select
+                        value={selectedCategory}
+                        onChange={event => setSelectedCategory(event.target.value)}
+                        aria-label="Filter tools by category"
+                        className="w-full appearance-none bg-white dark:bg-[#151f32] border border-gray-100 dark:border-slate-800 rounded-xl pl-2.5 pr-8 py-1.5 text-xs font-semibold shadow-sm outline-none focus:ring-2 focus:ring-[#fcb7f0] focus:border-[#fcb7f0] transition-all dark:text-slate-200"
+                    >
+                        {categoryOptions.map(category => (
+                            <option key={category} value={category}>
+                                {CATEGORY_LABELS[category] || category}
+                            </option>
+                        ))}
+                    </select>
+                    <ChevronDown
+                        size={14}
+                        className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500"
+                    />
+                </div>
+
+                {/* Category tabs when there is enough horizontal space */}
+                <div className="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar py-0.5 sm:flex">
+                    {categoryOptions.map(category => {
+                        const isSelected = selectedCategory === category;
                         return (
                             <button
-                                key={cat}
-                                onClick={() => setSelectedCategory(cat)}
-                                className={`px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-all border ${
+                                key={category}
+                                onClick={() => setSelectedCategory(category)}
+                                className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-bold transition-all border ${
                                     isSelected
-                                        ? 'bg-[#fcb7f0] border-[#fcb7f0] text-slate-800 font-extrabold shadow-sm scale-105'
+                                        ? 'bg-[#fcb7f0] border-[#fcb7f0] text-slate-800 font-extrabold shadow-sm'
                                         : 'bg-white dark:bg-[#151f32] border-gray-100 dark:border-slate-800 text-gray-500 dark:text-slate-400 shadow-sm hover:shadow hover:bg-gray-50 dark:hover:bg-slate-800/40'
                                 }`}
                             >
-                                {displayLabel}
+                                {CATEGORY_LABELS[category] || category}
                             </button>
                         );
                     })}
                 </div>
-                
-                {/* Search Box styled as floating box (shortened) */}
-                <div className="relative max-w-[150px] sm:max-w-[180px] md:max-w-xs w-full">
+
+                {/* Search box */}
+                <div className="relative w-36 flex-none">
                     <input
                         type="text"
                         placeholder="Search tools, keys..."
