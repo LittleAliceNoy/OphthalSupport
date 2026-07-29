@@ -7,6 +7,7 @@ import {
 } from '../constants';
 import { DBOperation, DBRule } from '../configService';
 import { applyMpToolsLogic } from './checklistRules';
+import { CLINICAL_CATALOG } from './catalog';
 
 export interface ChecklistConfig {
   operations: DBOperation[];
@@ -120,7 +121,7 @@ function getMpTypes(session: PatientSession, normalizedText: string, showMp: boo
   if (!isMpActive) return [];
 
   const diagnoses = session.diagnosis.split(',').map(value => value.trim());
-  const types = ['ERM', 'MH', 'TRD', 'RRD'].filter(type =>
+  const types = [...CLINICAL_CATALOG.mpTypes].reverse().filter(type =>
     diagnoses.includes(type) || normalizedText.includes(type.toLowerCase()),
   );
 

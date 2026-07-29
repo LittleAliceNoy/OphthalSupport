@@ -1,4 +1,5 @@
 import type { SurgeonGroups } from './domain/toolTypes';
+import { CLINICAL_CATALOG } from './domain/catalog';
 
 // --- Types ---
 
@@ -41,12 +42,12 @@ export const ANESTHESIA_TYPES = { LA: 'LA', GA: 'GA' };
 export const COVERAGE_TYPES = { CSMBS: 'CSMBS', SSS: 'SSS', UCS: 'UCS' };
 
 // Tool Specific Value Constants
-export const NEW_REUSED_OPTIONS = { NEW: 'New', REUSED: 'Reused' };
-export const PPV_SIZES = { G23: '23G', G25: '25G' };
-export const MACHINE_TYPES = { CENTURION: 'Centurion', LEGION: 'Legion', STELLARIS: 'Stellaris' }; 
-export const MP_TYPES = ['RRD', 'TRD', 'MH', 'ERM'];
-export const GDI_TYPES = ['Ahmed', 'XEN', 'Express GFD', 'Preserflo', 'AADI'];
-export const PPV_TYPES = ['23G', '25G'];
+export const NEW_REUSED_OPTIONS = CLINICAL_CATALOG.reusableOptions;
+export const PPV_SIZES = { G23: CLINICAL_CATALOG.ppvGauges[0], G25: CLINICAL_CATALOG.ppvGauges[1] };
+export const MACHINE_TYPES = CLINICAL_CATALOG.machineTypes;
+export const MP_TYPES = [...CLINICAL_CATALOG.mpTypes];
+export const GDI_TYPES = [...CLINICAL_CATALOG.gdiTypes];
+export const PPV_TYPES = [...CLINICAL_CATALOG.ppvGauges];
 
 // Surgeon Group Data
 export const DEFAULT_SURGEON_GROUPS: SurgeonGroups = {

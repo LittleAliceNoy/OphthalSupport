@@ -50,3 +50,35 @@ To create a production build:
 npm run build
 ```
 The output will be in the `dist` folder.
+
+## Supabase production setup
+
+Do not run `supabase_schema.sql` against a production database. It is a
+destructive bootstrap script for a disposable database and truncates the
+application tables before seeding them.
+
+For an existing database:
+
+1. Use the versioned migration in `supabase/migrations/` with the Supabase CLI.
+   Before applying it, create a backup and review the migration diff. The
+   migration enables RLS, permits public reads for the checklist, and
+   restricts writes and admin RPCs to authenticated users with
+   `app_metadata.role = 'admin'`.
+2. Create administrator accounts in Supabase Authentication with email and
+   password sign-in enabled.
+3. Set the administrator role in `app_metadata` using a trusted admin-only
+   process. For example, in the Supabase SQL Editor:
+
+   ```sql
+   update auth.users
+   set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"admin"}'::jsonb
+   where email = 'admin@example.com';
+   ```
+
+4. Sign in through the Admin page. The browser client uses only the public
+   Supabase anon key; never put a service-role key in Vite environment
+   variables or client-side code.
+
+For a new disposable development database, run `supabase_schema.sql` first,
+then apply the versioned migration to install the secured policies and RPC
+permissions. Never run `supabase_schema.sql` against production.

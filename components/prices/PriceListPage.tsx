@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Search, Tag } from 'lucide-react';
 import { DBPrice, DBTool } from '../../configService';
 import { CATEGORY_LABELS, CATEGORY_ORDER, TOOL_CATEGORIES, TOOL_ORDER, getToolDisplayName } from '../../toolCatalog';
+import { CLINICAL_CATALOG } from '../../domain/catalog';
 const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<'All' | string>('All');
@@ -32,7 +33,7 @@ const PriceListPage = ({ tools, prices }: { tools: DBTool[], prices: DBPrice[] }
             const toolPrices = prices.filter(p => p.tool_id === tool.id);
             
             if (tool.id === 'ppv-set') {
-                const machines = ['Constellation', 'Stellaris'];
+                const machines = CLINICAL_CATALOG.vitrectomyMachines;
                 machines.forEach(machine => {
                     const price23G = toolPrices.find(p => p.sub_key === `23G_${machine}`);
                     const price25G = toolPrices.find(p => p.sub_key === `25G_${machine}`);

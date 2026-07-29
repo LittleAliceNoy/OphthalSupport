@@ -1,4 +1,5 @@
 import { ChecklistItemData, NEW_REUSED_OPTIONS } from '../constants';
+import { CLINICAL_CATALOG } from './catalog';
 
 /**
  * Applies the tool dependencies for membrane-peeling procedures.
@@ -12,7 +13,7 @@ export function applyMpToolsLogic(
 ): ChecklistItemData[] {
   const needBbgIlm = mpTypes.includes('ERM') || mpTypes.includes('MH');
   const needScissors = mpTypes.includes('TRD');
-  const is25G = diagnosis.includes('25G');
+  const is25G = diagnosis.includes(CLINICAL_CATALOG.ppvGauges[1]);
 
   return tools.map((tool) => {
     if (tool.id === 'bbg') {

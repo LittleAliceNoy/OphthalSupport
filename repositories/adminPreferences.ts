@@ -4,6 +4,7 @@ import {
     SurgeonPreference,
 } from '../components/admin/adminRulesCatalog';
 import type { SurgeonGroups } from '../domain/toolTypes';
+import { CLINICAL_CATALOG } from '../domain/catalog';
 
 const STORAGE_KEYS = {
     preferences: 'ophthal_surgeon_preferences',
@@ -29,7 +30,7 @@ export function loadSurgeonPreferences(): SurgeonPreference[] {
         id: `pref-c-${index}`,
         surgeon,
         tool: 'Phaco Machine',
-        value: 'Centurion',
+        value: CLINICAL_CATALOG.machineTypes.CENTURION,
     }));
 }
 

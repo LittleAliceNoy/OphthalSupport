@@ -6,6 +6,7 @@ import {
     saveCenturionSurgeons,
     saveSurgeonPreferences as persistSurgeonPreferences,
 } from '../../../repositories/adminPreferences';
+import { CLINICAL_CATALOG } from '../../../domain/catalog';
 
 interface UseAdminPreferencesArgs {
     showToast: (message: string, type: 'success' | 'error') => void;
@@ -16,7 +17,7 @@ export function useAdminPreferences({ showToast }: UseAdminPreferencesArgs) {
     const [showAddPrefModal, setShowAddPrefModal] = useState(false);
     const [newPrefSurgeon, setNewPrefSurgeon] = useState('');
     const [newPrefTool, setNewPrefTool] = useState('Phaco Machine');
-    const [newPrefValue, setNewPrefValue] = useState('Centurion');
+    const [newPrefValue, setNewPrefValue] = useState(CLINICAL_CATALOG.machineTypes.CENTURION);
     const [editingPrefId, setEditingPrefId] = useState<string | null>(null);
     const [editPrefSurgeon, setEditPrefSurgeon] = useState('');
     const [editPrefTool, setEditPrefTool] = useState('');
@@ -56,7 +57,7 @@ export function useAdminPreferences({ showToast }: UseAdminPreferencesArgs) {
     const handleCloseAddPrefModal = () => {
         const hasInputs = newPrefSurgeon.trim()
             || newPrefTool !== 'Phaco Machine'
-            || newPrefValue !== 'Centurion';
+            || newPrefValue !== CLINICAL_CATALOG.machineTypes.CENTURION;
         if (hasInputs && !window.confirm('You have unsaved surgeon-preference changes. Discard them?')) return;
         setShowAddPrefModal(false);
         setNewPrefSurgeon('');
@@ -117,7 +118,7 @@ export function useAdminPreferences({ showToast }: UseAdminPreferencesArgs) {
             id: `pref-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
             surgeon: defaultSurgeon || '',
             tool: 'Phaco Machine',
-            value: 'Centurion',
+            value: CLINICAL_CATALOG.machineTypes.CENTURION,
         }]);
     };
 
@@ -177,7 +178,7 @@ export function useAdminPreferences({ showToast }: UseAdminPreferencesArgs) {
             handleUpdatePrefRowInEdit,
         },
         hasUnsavedChanges: () => (
-            (showAddPrefModal && Boolean(newPrefSurgeon.trim() || newPrefTool !== 'Phaco Machine' || newPrefValue !== 'Centurion'))
+            (showAddPrefModal && Boolean(newPrefSurgeon.trim() || newPrefTool !== 'Phaco Machine' || newPrefValue !== CLINICAL_CATALOG.machineTypes.CENTURION))
             || editingPrefId !== null
             || isEditingSurgeonPrefs
         ),
