@@ -1,0 +1,25 @@
+name: Keep Supabase Active
+
+on:
+  schedule:
+    - cron: '17 3 */3 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query Supabase REST API
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          test -n "$VITE_SUPABASE_URL" || { echo "Missing VITE_SUPABASE_URL repository secret"; exit 1; }
+          test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Missing VITE_SUPABASE_ANON_KEY repository secret"; exit 1; }
+          curl --fail --silent --show-error --retry 3 --max-time 30 \
+            -H "apikey: $VITE_SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $VITE_SUPABASE_ANON_KEY" \
+            "$VITE_SUPABASE_URL/rest/v1/operations?select=id&limit=1"
