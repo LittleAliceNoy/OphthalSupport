@@ -1,6 +1,6 @@
 import React, { FormEvent, useEffect, useState } from 'react';
 import { LogIn, LogOut, ShieldCheck } from 'lucide-react';
-import { supabase } from '../supabase';
+import { isSupabaseConfigured, supabase } from '../supabase';
 
 interface AdminAuthGateProps {
     children: React.ReactNode;
@@ -34,6 +34,11 @@ export default function AdminAuthGate({ children }: AdminAuthGateProps) {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
+        if (!isSupabaseConfigured) {
+            setAuth({ status: 'signed-out', isAdmin: false, email: '' });
+            return;
+        }
+
         let mounted = true;
 
         supabase.auth.getSession().then(({ data: { session } }) => {
@@ -63,6 +68,10 @@ export default function AdminAuthGate({ children }: AdminAuthGateProps) {
 
     const handleSignIn = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
+        if (!isSupabaseConfigured) {
+            setErrorMessage('Admin sign-in is unavailable while Supabase is not configured.');
+            return;
+        }
         setIsSubmitting(true);
         setErrorMessage('');
 
@@ -76,7 +85,7 @@ export default function AdminAuthGate({ children }: AdminAuthGateProps) {
     };
 
     const handleSignOut = async () => {
-        await supabase.auth.signOut();
+        if (isSupabaseConfigured) await supabase.auth.signOut();
     };
 
     if (auth.status === 'loading') {

@@ -19,7 +19,7 @@ A specialized surgical operation checklist generator designed for ophthalmic sur
 - **Framework**: React 19 (TypeScript)
 - **Build Tool**: Vite 6
 - **Icons**: Lucide React
-- **Styling**: Tailwind CSS
+- **Styling**: Tailwind CSS via the browser CDN in `index.html`
 
 ## Getting Started
 
@@ -34,6 +34,14 @@ A specialized surgical operation checklist generator designed for ophthalmic sur
    ```bash
    npm install
    ```
+3. (Optional) Create `.env.local` for Supabase-backed configuration:
+   ```bash
+   VITE_SUPABASE_URL=https://your-project.supabase.co
+   VITE_SUPABASE_ANON_KEY=your-public-anon-key
+   ```
+
+   Without these variables, the app runs with local fallback data and admin
+   sign-in is unavailable.
 
 ### Running Locally
 

@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { isSupabaseConfigured, supabase } from './supabase';
 import type { ToolOption, ToolType } from './domain/toolTypes';
 import { 
   FALLBACK_ACTIONS, 
@@ -60,6 +60,17 @@ function isLegacyPlaceholderTool(tool: DBTool): boolean {
 }
 
 export const fetchConfig = async () => {
+  if (!isSupabaseConfigured) {
+    return {
+      tools: FALLBACK_TOOLS,
+      actions: FALLBACK_ACTIONS,
+      operations: FALLBACK_OPERATIONS,
+      rules: FALLBACK_RULES,
+      prices: FALLBACK_PRICES,
+      isFallback: true
+    };
+  }
+
   try {
     const [
       { data: tools, error: toolsErr },

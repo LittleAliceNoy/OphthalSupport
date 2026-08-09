@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useState, useEffect, useMemo } from 'react';
 
 import { getSurgeonGroups } from './constants';
 import { fetchConfig, DBTool, DBAction, DBOperation, DBRule, DBPrice } from './configService';
-import { supabase } from './supabase';
+import { isSupabaseConfigured, supabase } from './supabase';
 import { calculateCostAndBreakdown } from './domain/pricing';
 import ChecklistView from './components/ChecklistView';
 import { useChecklistSession } from './hooks/useChecklistSession';
@@ -28,6 +28,11 @@ export default function App() {
     }, []);
 
     useEffect(() => {
+        if (!isSupabaseConfigured) {
+            setIsAdminAuthenticated(false);
+            return;
+        }
+
         let mounted = true;
         const updateAdminStatus = (session: { user?: { app_metadata?: Record<string, unknown> } } | null) => {
             if (mounted) setIsAdminAuthenticated(session?.user?.app_metadata?.role === 'admin');
@@ -108,7 +113,9 @@ export default function App() {
                 isAdminAuthenticated={isAdminAuthenticated}
                 onViewChange={handleViewChange}
                 onToggleTheme={toggleTheme}
-                onSignOut={async () => { await supabase.auth.signOut(); }}
+                onSignOut={async () => {
+                    if (isSupabaseConfigured) await supabase.auth.signOut();
+                }}
             />
 
             <main className="max-w-3xl mx-auto px-3 py-3 sm:px-4 sm:py-6">
